@@ -3,194 +3,92 @@
 <head>
   <meta charset="UTF-8">
   <title>{{ data.name }} | Session View</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background: #111;
-      color: #eee;
-      display: flex;
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    aside {
-      width: 240px;
-      background: linear-gradient(to bottom, #1f1f1f, #151515);
-      padding: 20px;
-      overflow-y: auto;
-      border-right: 1px solid #2a2a2a;
-      box-shadow: inset -1px 0 0 #000;
-      transition: background 0.3s;
-    }
-
-    aside h2 {
-      font-size: 16px;
-      font-weight: 600;
-      color: #ccc;
-      margin-bottom: 16px;
-      letter-spacing: 0.5px;
-      border-bottom: 1px solid #333;
-      padding-bottom: 6px;
-    }
-
-    aside ul {
-      list-style: none;
-      padding-left: 0;
-    }
-
-    aside li {
-      margin-bottom: 10px;
-      color: #7a7a7a;
-    }
-
-    aside a {
-      display: block;
-      color: #bdbdbd;
-      background: #1f1f1f;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-      text-decoration: none;
-      transition: background 0.2s, color 0.2s;
-    }
-
-    aside a:hover {
-      background: #00bcd4;
-      color: #111;
-      text-decoration: none;
-    }
-
-    aside::-webkit-scrollbar {
-      width: 2px;
-    }
-
-    aside::-webkit-scrollbar-thumb {
-      background: #333;
-      border-radius: 3px;
-    }
-
-    main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      padding: 20px;
-      overflow-y: auto;
-    }
-
-    .transcript {
-      flex: 1;
-      overflow-y: auto;
-      margin-bottom: 60px;
-    }
-
-    .transcript h3 {
-      font-size: 20px;
-      margin-bottom: 10px;
-    }
-
-    .segment {
-      margin-bottom: 15px;
-    }
-
-    .segment-range {
-      display: block;
-      font-size: 13px;
-      color: #888;
-      margin-bottom: 4px;
-    }
-
-    .word {
-      display: inline-block;
-      margin-right: 4px;
-      padding: 2px 4px;
-      border-radius: 3px;
-      cursor: pointer;
-      transition: background 0.2s, color 0.2s;
-    }
-
-    .word:hover {
-      background: #0af;
-      color: #000;
-    }
-
-    .word.active {
-      background: #ffde59;
-      color: #000;
-    }
-
-    footer {
-      position: fixed;
-      bottom: 0;
-      left: 240px;
-      right: 0;
-      background: #000;
-      padding: 10px 20px;
-      border-top: 1px solid #333;
-      z-index: 999;
-    }
-
-    audio {
-      width: 100%;
-      outline: none;
-    }
-
-    @media (max-width: 768px) {
-      aside {
-        display: none;
-      }
-
-      footer {
-        left: 0;
-      }
-    }
-  </style>
+<script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-
-  <!-- Sidebar -->
-  <aside>
-    <h2>Sessions</h2>
-    <li><a href="/" style="color: #0af;">+ Transcribe New</a></li>
-    <ul id="session-list">
-      <!-- Filled via JavaScript -->
-    </ul>
+<body class="h-screen flex bg-gray-900 text-gray-200 font-sans overflow-hidden">
+<!-- Wrapper -->
+<div class="flex h-screen">
+  <!-- Sidebar (Sessions) -->
+  <aside class="w-60 bg-gradient-to-b from-gray-800 to-gray-900 p-5 overflow-y-auto border-r border-gray-700 hidden md:block">
+    <h2 class="text-sm font-semibold text-gray-400 mb-4 tracking-wide border-b border-gray-700 pb-2">Sessions</h2>
+    <li><a href="/" class="block text-cyan-400 mb-3 hover:underline">+ Transcribe New</a></li>
+    <ul id="session-list" class="space-y-2 text-sm"></ul>
   </aside>
 
-  <!-- Main Content -->
-  <main>
-    <h1>{{ data.name }}</h1>
-    <div class="transcript" id="transcript">
-      <h3>Transcript:</h3>
-      {% for seg in data.segments %}
-        <div class="segment">
-          <span class="segment-range">[{{ seg.start|round(2) }}s - {{ seg.end|round(2) }}s]</span>
-          {% for word in seg.words %}
-            <span 
-              class="word" 
-              data-start="{{ word.start }}" 
-              data-end="{{ word.end }}"
-              title="{{ word.word }}">
-              {{ word.word }}
-            </span>
-          {% endfor %}
+  <!-- Main + Highlights container -->
+  <div class="flex flex-1 h-full">
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col p-5 overflow-y-auto">
+      <!-- Highlight toggle + export -->
+      <div class="flex justify-between items-center mb-4">
+        <div class="space-x-2">
+          <button id="toggle-highlight" class="px-3 py-1 rounded bg-gray-700 hover:bg-cyan-500 hover:text-black text-sm">
+            Highlight Mode
+          </button>
         </div>
-      {% endfor %}
-    </div>
-  </main>
+        <div class="space-x-2">
+          <button id="export-docx" class="px-3 py-1 rounded bg-gray-700 hover:bg-cyan-500 hover:text-black text-sm">Export Word</button>
+          <button id="export-txt" class="px-3 py-1 rounded bg-gray-700 hover:bg-cyan-500 hover:text-black text-sm">Export TXT</button>
+        </div>
+      </div>
 
-  <!-- Audio Player at Bottom -->
-  <footer>
-    <audio id="player" controls>
-      <source src="{{ data.audio_url }}" type="audio/mpeg">
-      Your browser does not support audio playback.
-    </audio>
-  </footer>
+      <h1 class="text-2xl font-semibold mb-5">{{ data.name }}</h1>
+
+      <!-- Transcript -->
+      <div class="flex-1 overflow-y-auto mb-20" id="transcript">
+        <h3 class="text-lg mb-3">Transcript:</h3>
+        {% for seg in data.segments %}
+          <div class="mb-4 segment">
+            <span class="block text-xs text-gray-400 mb-1 segment-range">
+              [{{ seg.start|round(2) }}s - {{ seg.end|round(2) }}s]
+            </span>
+            {% for word in seg.words %}
+              <span 
+                class="word inline-block mr-1 px-1 rounded cursor-pointer transition-colors duration-150 hover:bg-cyan-400 hover:text-black"
+                data-start="{{ word.start }}" 
+                data-end="{{ word.end }}"
+                title="{{ word.word }}">
+                {{ word.word }}
+              </span>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+    </main>
+
+    <!-- Side panel for highlights -->
+    <aside id="highlight-panel" class="w-64 h-full bg-gray-800 border-l border-gray-700 p-4 overflow-y-auto text-gray-200">
+      <h3 class="text-lg font-semibold mb-3">Highlights</h3>
+      <ul id="highlight-list" class="space-y-3"></ul>
+    </aside>
+  </div>
+</div>
+
+<!-- Audio Player at Bottom -->
+<footer class="fixed bottom-0 left-60 right-64 bg-black border-t border-gray-700 p-3 z-50">
+  <audio id="player" controls class="w-full outline-none">
+    <source src="{{ data.audio_url }}" type="audio/mpeg">
+    Your browser does not support audio playback.
+  </audio>
+</footer>
+
+<!-- Custom CSS for highlights -->
+<style>
+  .word.highlighted {
+    background: rgba(102, 255, 173, 1);
+    color: #000;
+  }
+  .word.temp-highlight {
+    background: rgba(255, 255, 0, 0.5);
+  }
+  #highlight-list textarea {
+    font-size: 12px;
+  }
+  .word.active {
+  background: #ffde59;
+  color: #000;
+}
+</style>
 
   <!-- JS Logic -->
   <script>
@@ -239,6 +137,181 @@
           list.appendChild(li);
         });
       });
+
+
+
+
+      function getTranscriptText() {
+  let transcript = "";
+  document.querySelectorAll(".segment").forEach(seg => {
+    const range = seg.querySelector(".segment-range").textContent;
+    const words = Array.from(seg.querySelectorAll(".word")).map(w => w.textContent).join(" ");
+    transcript += `${range}\n${words}\n\n`;
+  });
+  return transcript;
+}
+
+// Export TXT
+document.getElementById("export-txt").addEventListener("click", () => {
+  const text = getTranscriptText();
+  const blob = new Blob([text], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "transcript.txt";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// Export DOCX (simple version using Office MIME)
+document.getElementById("export-docx").addEventListener("click", () => {
+  const text = getTranscriptText();
+  const blob = new Blob(
+    [
+      `<html xmlns:o='urn:schemas-microsoft-com:office:office' 
+             xmlns:w='urn:schemas-microsoft-com:office:word'
+             xmlns='http://www.w3.org/TR/REC-html40'>
+        <head><meta charset="utf-8"></head><body>${text.replace(/\n/g,"<br>")}</body></html>`
+    ],
+    { type: "application/msword" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "transcript.doc";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+let highlightMode = false;
+let isDragging = false;
+let currentSelection = [];
+
+// Data structure for persistence
+let highlights = []; // each {id, words:[indices], note:""}
+
+document.getElementById("toggle-highlight").addEventListener("click", () => {
+  highlightMode = !highlightMode;
+  document.getElementById("toggle-highlight").textContent = 
+    highlightMode ? "Highlight Mode: ON" : "Highlight Mode: OFF";
+});
+
+// Mark word selection
+words.forEach((word, index) => {
+  word.dataset.index = index; // assign index
+
+  word.addEventListener("mousedown", e => {
+    if (!highlightMode) return;
+    isDragging = true;
+    currentSelection = [];
+    clearTempSelection();
+    word.classList.add("temp-highlight");
+    currentSelection.push(index);
+    e.preventDefault();
+  });
+
+  word.addEventListener("mouseover", () => {
+    if (isDragging && highlightMode) {
+      word.classList.add("temp-highlight");
+      currentSelection.push(parseInt(word.dataset.index));
+    }
+  });
+
+  word.addEventListener("mouseup", () => {
+    if (isDragging && highlightMode) {
+      isDragging = false;
+      finalizeHighlight(currentSelection);
+      currentSelection = [];
+    }
+  });
+});
+
+function clearTempSelection() {
+  document.querySelectorAll(".temp-highlight").forEach(w => w.classList.remove("temp-highlight"));
+}
+
+function finalizeHighlight(indices) {
+  const id = Date.now();
+  indices.forEach(i => words[i].classList.add("highlighted"));
+  highlights.push({ id, words: indices, note: "" });
+  renderHighlights();
+  saveHighlights();
+
+  clearTempSelection();
+}
+function saveHighlights() {
+  localStorage.setItem("transcriptHighlights", JSON.stringify(highlights));
+}
+
+function loadHighlights() {
+  const data = localStorage.getItem("transcriptHighlights");
+  if (data) {
+    highlights = JSON.parse(data);
+    // reapply highlights to words
+    highlights.forEach(h => h.words.forEach(i => words[i].classList.add("highlighted")));
+    renderHighlights();
+  }
+}
+
+
+
+function renderHighlights() {
+  const list = document.getElementById("highlight-list");
+  list.innerHTML = "";
+  highlights.forEach(h => {
+    const li = document.createElement("li");
+    li.style.marginBottom = "10px";
+    li.innerHTML = `
+      <div>
+        <textarea data-id="${h.id}" style="width:100%;background:#111;color:#eee;border:1px solid #444;"
+          placeholder="Add note...">${h.note}</textarea>
+        <button data-del="${h.id}">Delete</button>
+      </div>`;
+    list.appendChild(li);
+  });
+
+// update note on input
+list.querySelectorAll("textarea").forEach(area => {
+  area.addEventListener("input", e => {
+    const id = parseInt(e.target.dataset.id);
+    const h = highlights.find(x => x.id === id);
+    if (h) {
+      h.note = e.target.value;
+      saveHighlights();
+    }
+  });
+});
+
+// delete
+list.querySelectorAll("button[data-del]").forEach(btn => {
+  btn.addEventListener("click", e => {
+    const id = parseInt(e.target.dataset.del);
+    highlights = highlights.filter(x => x.id !== id);
+    words.forEach(w => w.classList.remove("highlighted"));
+    highlights.forEach(h => h.words.forEach(i => words[i].classList.add("highlighted")));
+    saveHighlights();
+    renderHighlights();
+  });
+});
+
+}
+
+// Export persistence (extend your existing export functions)
+function getExportJSON() {
+  return JSON.stringify({ highlights }, null, 2);
+}
+document.addEventListener("keydown", e => {
+  if (e.altKey && e.key.toLowerCase() === "q") {
+    highlightMode = !highlightMode;
+    document.getElementById("toggle-highlight").textContent = 
+      highlightMode ? "Highlight Mode: ON" : "Highlight Mode: OFF";
+  }
+});
+
+loadHighlights();
+
   </script>
 </body>
 </html>
