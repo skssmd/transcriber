@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Processing Transcription</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center">
+  <div class="max-w-2xl w-full p-8">
+    <div class="bg-gray-800 rounded-lg shadow-xl p-8">
+      <h1 class="text-3xl font-bold text-cyan-400 mb-6 text-center">Processing Your Audio</h1>
+      
+      <!-- Progress Bar -->
+      <div class="mb-6">
+        <div class="flex justify-between mb-2">
+          <span id="status-text" class="text-sm font-medium">Starting...</span>
+          <span id="progress-percent" class="text-sm font-medium">0%</span>
+        </div>
+        <div class="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
+          <div id="progress-bar" class="bg-cyan-500 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+      </div>
+      
+      <!-- Status Messages -->
+      <div class="space-y-3 mb-6">
+        <div id="step-converting" class="flex items-center text-gray-400">
+          <span class="w-6 h-6 mr-3">⏳</span>
+          <span>Converting audio format...</span>
+        </div>
+        <div id="step-loading" class="flex items-center text-gray-400">
+          <span class="w-6 h-6 mr-3">⏳</span>
+          <span>Loading AI model...</span>
+        </div>
+        <div id="step-transcribing" class="flex items-center text-gray-400">
+          <span class="w-6 h-6 mr-3">⏳</span>
+          <span>Transcribing audio...</span>
+        </div>
+        <div id="step-saving" class="flex items-center text-gray-400">
+          <span class="w-6 h-6 mr-3">⏳</span>
+          <span>Saving transcript...</span>
+        </div>
+        <div id="step-summary" class="flex items-center text-gray-400">
+          <span class="w-6 h-6 mr-3">⏳</span>
+          <span>Generating AI summary...</span>
+        </div>
+      </div>
+      
+      <!-- Error Message -->
+      <div id="error-message" class="hidden bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded mb-4">
+        <strong class="font-bold">Error: </strong>
+        <span id="error-text"></span>
+      </div>
+      
+      <!-- Info -->
+      <div class="text-center text-sm text-gray-400">
+        <p>This may take a few minutes depending on audio length.</p>
+        <p class="mt-2">You'll be redirected automatically when complete.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const sessionId = "{{ session_id }}";
+    const progressBar = document.getElementById('progress-bar');
+    const progressPercent = document.getElementById('progress-percent');
+    const statusText = document.getElementById('status-text');
+    const errorMessage = document.getElementById('error-message');
+    const errorText = document.getElementById('error-text');
+    
+    const statusMessages = {
+      'starting': 'Starting transcription...',
+      'converting': 'Converting audio format...',
+      'loading_model': 'Loading AI model...',
+      'transcribing': 'Transcribing audio...',
+      'saving': 'Saving transcript...',
+      'generating_summary': 'Generating AI summary...',
+      'complete': 'Complete! Redirecting...',
+      'error': 'Error occurred'
+    };
+    
+    const stepElements = {
+      'converting': 'step-converting',
+      'loading_model': 'step-loading',
+      'transcribing': 'step-transcribing',
+      'saving': 'step-saving',
+      'generating_summary': 'step-summary'
+    };
+    
+    function updateStep(status, completed) {
+      const elementId = stepElements[status];
+      if (elementId) {
+        const element = document.getElementById(elementId);
+        const icon = element.querySelector('span:first-child');
+        if (completed) {
+          element.classList.remove('text-gray-400');
+          element.classList.add('text-green-400');
+          icon.textContent = '✓';
+        } else {
+          element.classList.remove('text-gray-400');
+          element.classList.add('text-cyan-400');
+          icon.textContent = '⏳';
+        }
+      }
+    }
+    
+    function checkProgress() {
+      fetch(`/api/progress/${sessionId}`)
+        .then(response => response.json())
+        .then(data => {
+          const { status, progress, error } = data;
+          
+          // Update progress bar
+          progressBar.style.width = `${progress}%`;
+          progressPercent.textContent = `${progress}%`;
+          
+          // Update status text
+          statusText.textContent = statusMessages[status] || status;
+          
+          // Update step indicators
+          if (status === 'converting') {
+            updateStep('converting', false);
+          } else if (status === 'loading_model') {
+            updateStep('converting', true);
+            updateStep('loading_model', false);
+          } else if (status === 'transcribing') {
+            updateStep('converting', true);
+            updateStep('loading_model', true);
+            updateStep('transcribing', false);
+          } else if (status === 'saving') {
+            updateStep('converting', true);
+            updateStep('loading_model', true);
+            updateStep('transcribing', true);
+            updateStep('saving', false);
+          } else if (status === 'generating_summary') {
+            updateStep('converting', true);
+            updateStep('loading_model', true);
+            updateStep('transcribing', true);
+            updateStep('saving', true);
+            updateStep('generating_summary', false);
+          } else if (status === 'complete') {
+            // Mark all complete
+            Object.keys(stepElements).forEach(step => updateStep(step, true));
+            
+            // Redirect after short delay
+            setTimeout(() => {
+              window.location.href = `/session/${sessionId}`;
+            }, 1000);
+            return;
+          } else if (status === 'error') {
+            errorMessage.classList.remove('hidden');
+            errorText.textContent = error || 'Unknown error occurred';
+            return;
+          }
+          
+          // Continue polling
+          setTimeout(checkProgress, 1000);
+        })
+        .catch(err => {
+          console.error('Error checking progress:', err);
+          setTimeout(checkProgress, 2000);
+        });
+    }
+    
+    // Start checking progress
+    checkProgress();
+  </script>
+</body>
+</html>

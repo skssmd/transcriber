@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project specific - uploaded files and generated data
+uploads/
+sessions/
+summaries/
+
+# Context cache files (can be regenerated)
+#sessions/*_contexts.json
+
+# Audio files
+*.mp3
+*.wav
+*.m4a
+*.aac
+*.ogg
+*.flac
+*.wma
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# API Keys and sensitive data
+.env
+*.key
+config.ini
+settings.py
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Documentation (keep these in repo)
+!README.md
+!SETUP.md
+!SMART_CHUNKING.md
+!GENERATE_MINUTES.md
+!NEW_FEATURES.md
+
+# Keep example files if any
+!example/
