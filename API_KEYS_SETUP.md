@@ -21,7 +21,7 @@ Open `settings.py` and add your Gemini API keys:
 ```python
 # settings.py
 GEMINI_API_KEYS = [
-    "AIzaSyBRFKZNhVFBd6xdiItADwsj2-mUhh-YfWU",  # Your first key
+    "AIzaSyBRFKZNad",  # Your first key
     "AIzaSyABC123...",  # Add more keys here
     "AIzaSyDEF456...",
     "AIzaSyGHI789...",

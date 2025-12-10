@@ -148,7 +148,7 @@ def process_transcription(session_id, audio_path, filename, model_size, device, 
 def index():
     if request.method == "POST":
         audio = request.files.get("audio")
-        model_size = request.form.get("model_size", "base")
+        model_size = "tiny"
         device = request.form.get("device", "cpu")
         compute_type = request.form.get("compute_type", "int8")
 
@@ -588,6 +588,7 @@ def map_contexts(segments, model):
     chunks = chunk_by_time(segments, chunk_duration=600)  # 10 minutes
     contexts = []
     ongoing_context = None
+    ongoing_chunk_count = 0  # Track how many chunks the current context has spanned
     last_finished_context = None
     previous_chunk_text = None
     
@@ -607,112 +608,150 @@ def map_contexts(segments, model):
             if 'summary' in last_finished_context:
                 context_history += f"\n  Summary: {last_finished_context['summary']}"
         
+        # Check if ongoing context needs to be broken into subcontexts (exceeded 2 chunks)
+        force_subcontext = ongoing_context and ongoing_chunk_count >= 2
+        
         # Build prompt with ongoing context awareness
-        if ongoing_context and previous_chunk_text:
-            # Special case: Check if ongoing context from previous chunk continues or ended
-            prompt = f"""ONGOING CONTEXT CHECK:
-
-Previous chunk text (for reference):
-{previous_chunk_text}
-
-Ongoing context from previous chunk:
-- Name: "{ongoing_context['name']}"
-- Started at: {ongoing_context['from_time']}s
-- Summary so far: {ongoing_context.get('summary', 'N/A')}
-
-Current chunk ({chunk['start_time']}s - {chunk['end_time']}s):
-{chunk_text}
-
-TASK: Determine if the ongoing context continues in this chunk or has ended.
-
-If the ongoing context CONTINUES:
-- Return it with "is_continuation": true and "status": "ongoing" or "finished" (if it ends in this chunk)
-- Update the summary to include what happened in this chunk
-
-If the ongoing context ENDED in the previous chunk:
-- Return it with "is_continuation": false, "status": "finished", and "ended_in_previous": true
-- Then identify any NEW contexts in the current chunk
-
-Return JSON array:
-[
-  {{
-    "name": "Context name (same as ongoing if continuation)",
-    "from_time": {ongoing_context['from_time']} (keep original start time if continuation),
-    "end_time": timestamp where it ends,
-    "status": "finished" or "ongoing",
-    "is_continuation": true or false,
-    "ended_in_previous": true (only if context ended in previous chunk),
-    "summary": "Updated summary including this chunk's content"
-  }}
-]
-
-IMPORTANT: 
-- Return ONLY valid JSON array, no markdown
-- First context MUST address the ongoing context (continuation or ended)
-- If continuation and still ongoing, mark status as "ongoing"
-- If continuation and ends in this chunk, mark status as "finished"
-- If ended in previous chunk, mark "ended_in_previous": true and provide end_time from previous chunk"""
-        elif ongoing_context:
-            # Ongoing context exists but no previous chunk text (shouldn't happen but handle it)
-            prompt = f"""Previous context information:
-Ongoing context: "{ongoing_context['name']}" (started at {ongoing_context['from_time']}s)
+        if ongoing_context:
+            # Determine if this is a subcontext (check for ":" in name)
+            is_subcontext = ":" in ongoing_context['name']
+            base_context_name = ongoing_context['name'].split(":")[0].strip() if is_subcontext else ongoing_context['name']
+            
+            if force_subcontext:
+                # Force breaking into subcontexts as this context has exceeded 2 chunks
+                prompt = f"""Previous context information:
+Ongoing context: "{ongoing_context['name']}" (started at {ongoing_context['from_time']}s, has spanned {ongoing_chunk_count} chunks)
   Summary so far: {ongoing_context.get('summary', 'N/A')}
 
+⚠️ CRITICAL: This context has exceeded the maximum of 2 chunks. You MUST break it into subcontexts NOW.
+
 Current chunk ({chunk['start_time']}s - {chunk['end_time']}s):
 {chunk_text}
 
-IMPORTANT GUIDELINES:
-- This is a 10-minute chunk, so identify major topic changes
-- A context can span MULTIPLE chunks (ongoing status)
-- Only create NEW contexts when the topic genuinely changes
-- Be conservative - fewer, well-justified contexts are better
+SUBCONTEXT NAMING RULES (MANDATORY):
+- Base topic name: "{base_context_name}"
+- Format: "Base Topic: Specific Aspect"
+- Keep base name SHORT (2-4 words max)
+- Subcontext should be descriptive but concise (2-4 words)
+- Examples: 
+  * "Product Launch: Marketing Strategy"
+  * "Product Launch: Budget Discussion"
+  * "Incident Report: Initial Account"
+  * "Incident Report: Follow-up Actions"
 
-Analyze this chunk and identify contexts. Determine if it's:
-- A CONTINUATION of the previous ongoing context
-- A NEW context that FINISHED in this chunk
-- A NEW context that is ONGOING (continues beyond this chunk)
+REQUIRED ACTIONS:
+1. End the ongoing context "{ongoing_context['name']}" at the point where the subtopic shifts in this chunk
+2. Create a NEW subcontext: "{base_context_name}: [New Specific Aspect]"
+3. The end_time of the first context MUST equal the from_time of the second context (no gaps/overlaps)
 
-Return JSON array (can be empty if entire chunk is continuation):
+Return JSON array with EXACTLY 2 contexts:
 [
   {{
-    "name": "Context name",
-    "from_time": {chunk['start_time']},
+    "name": "{ongoing_context['name']}",
+    "from_time": {ongoing_context['from_time']},
+    "end_time": [exact timestamp where this ends],
+    "status": "finished",
+    "is_continuation": true,
+    "summary": "Brief summary of what was covered in THIS portion"
+  }},
+  {{
+    "name": "{base_context_name}: [Concise New Aspect Name]",
+    "from_time": [same as end_time above],
     "end_time": {chunk['end_time']},
     "status": "finished" or "ongoing",
-    "is_continuation": true or false,
-    "summary": "Brief 1-2 sentence summary of what was discussed in this context"
+    "summary": "Brief summary of the new subcontext"
   }}
 ]
 
-IMPORTANT: Return ONLY valid JSON array, no markdown. Include summary for each context."""
-        else:
-            prompt = f"""Analyze this transcript chunk and identify contexts (topics/discussions).
+CRITICAL: Return ONLY valid JSON array, no markdown, no explanation."""
+            else:
+                # Normal ongoing context handling (not forced subcontext yet)
+                prompt = f"""Previous context information:
+Ongoing context: "{ongoing_context['name']}" (started at {ongoing_context['from_time']}s)
+  Chunks spanned: {ongoing_chunk_count + 1} of MAXIMUM 2
+  Summary so far: {ongoing_context.get('summary', 'N/A')}
+{context_history}
 
-Chunk ({chunk['start_time']}s - {chunk['end_time']}s):
+Current chunk ({chunk['start_time']}s - {chunk['end_time']}s):
 {chunk_text}
 
-IMPORTANT GUIDELINES:
-- This is a 10-minute chunk, so identify major topic changes
-- A context can span MULTIPLE chunks (mark as ongoing)
-- A chunk can contain PART of a context (beginning, middle, or end)
-- Only create contexts when topics genuinely change
-- Be conservative - fewer, well-justified contexts are better than many small ones
-- If the entire chunk is one discussion, return ONE context
+CONTEXT RULES:
+- Maximum 2 chunks per context - if exceeding, break into subcontexts
+- Subcontext format: "Base Topic: Specific Aspect" (both parts should be 2-4 words)
+- Only mark "ongoing" if discussion truly continues beyond this chunk
+- Mark "finished" if topic concludes or shifts significantly
 
-For each context, determine if it FINISHED in this chunk or is ONGOING (continues beyond).
+DECISION TREE:
+1. Is this a CONTINUATION of "{ongoing_context['name']}"?
+   - YES, same topic → Set is_continuation: true
+     * Will it continue beyond this chunk? → status: "ongoing"
+     * Does it conclude in this chunk? → status: "finished"
+   
+2. Is this a NEW topic/discussion?
+   - YES, different topic → Set is_continuation: false
+     * Finish ongoing context at transition point
+     * Create new context starting at transition point
+     * Will new topic continue? → status: "ongoing" or "finished"
 
-Return JSON array:
+CRITICAL RULES:
+- from_time and end_time must be EXACT timestamps from the transcript
+- NO gaps between contexts (end_time of one = from_time of next)
+- NO overlaps allowed
+- If entire chunk is continuation, return ONE context with is_continuation: true
+
+Return JSON array (1-2 contexts):
 [
   {{
-    "name": "Context name",
-    "from_time": {chunk['start_time']},
-    "end_time": {chunk['end_time']},
+    "name": "Context name (keep concise: 2-5 words)",
+    "from_time": [exact timestamp],
+    "end_time": [exact timestamp],
     "status": "finished" or "ongoing",
-    "summary": "Brief 1-2 sentence summary of what was discussed in this context"
+    "is_continuation": true or false,
+    "summary": "1-2 sentences describing what was discussed"
   }}
 ]
 
-IMPORTANT: Return ONLY valid JSON array, no markdown. Include summary for each context to help track discussion across chunks."""
+CRITICAL: Return ONLY valid JSON array, no markdown, no explanation."""
+        else:
+            prompt = f"""Analyze this transcript chunk and identify contexts (distinct topics/discussions).
+{context_history}
+
+Current chunk ({chunk['start_time']}s - {chunk['end_time']}s):
+{chunk_text}
+
+CONTEXT IDENTIFICATION RULES:
+- Context = A distinct topic or discussion thread
+- Use CONCISE names (2-5 words): "Budget Review", "Incident Report", "Product Demo"
+- Maximum 2 chunks per context - plan names that can be subdivided if needed
+- Be conservative: Fewer, well-defined contexts > many small fragments
+- If entire chunk is ONE topic → Return ONE context
+
+NAMING GUIDELINES:
+- Good: "Technical Implementation", "Client Feedback", "Safety Protocol"
+- Bad: "Discussion about the technical implementation details and challenges"
+- Avoid: overly specific names that can't accommodate subcontexts later
+
+STATUS DECISION:
+- "finished": Topic concludes within this chunk
+- "ongoing": Topic clearly continues beyond this chunk
+
+CRITICAL RULES:
+- Use EXACT timestamps from transcript (not rounded)
+- NO gaps or overlaps between contexts
+- Each context MUST have a summary (1-2 sentences)
+
+Return JSON array (typically 1-2 contexts per 10-min chunk):
+[
+  {{
+    "name": "Concise Context Name",
+    "from_time": [exact timestamp from transcript],
+    "end_time": [exact timestamp from transcript],
+    "status": "finished" or "ongoing",
+    "summary": "Brief 1-2 sentence summary of what was discussed"
+  }}
+]
+
+CRITICAL: Return ONLY valid JSON array, no markdown, no explanation."""
         
         try:
             response = model.generate_content(prompt)
@@ -727,32 +766,38 @@ IMPORTANT: Return ONLY valid JSON array, no markdown. Include summary for each c
             
             chunk_contexts = json.loads(response_text)
             
-            # Process contexts - ensure no time overlaps
+            # Validate and process contexts
             for ctx_idx, ctx in enumerate(chunk_contexts):
+                # Validate required fields
+                if not all(key in ctx for key in ['name', 'from_time', 'end_time', 'status']):
+                    print(f"  Warning: Context missing required fields, skipping")
+                    continue
+                
                 # Check if this context ended in previous chunk
                 if ctx.get('ended_in_previous') and ongoing_context:
-                    # The ongoing context actually ended in the previous chunk
-                    # Use the provided end_time (should be from previous chunk)
                     ongoing_context['end_time'] = ctx['end_time']
                     if 'summary' in ctx:
                         ongoing_context['summary'] = ctx['summary']
                     contexts.append(ongoing_context)
                     last_finished_context = ongoing_context
                     ongoing_context = None
-                    # Don't process this context further, move to next
+                    ongoing_chunk_count = 0
                     continue
                 
                 if ctx.get('is_continuation') and ongoing_context:
                     # Continuation of ongoing context
                     ongoing_context['end_time'] = ctx['end_time']
-                    # Update summary if provided
                     if 'summary' in ctx:
                         ongoing_context['summary'] = ctx['summary']
+                    
                     if ctx['status'] == 'finished':
                         contexts.append(ongoing_context)
-                        last_finished_context = ongoing_context  # Track for next chunk
+                        last_finished_context = ongoing_context
                         ongoing_context = None
-                    # If status is still 'ongoing', keep it in ongoing_context for next chunk
+                        ongoing_chunk_count = 0
+                    else:
+                        # Still ongoing, increment counter
+                        ongoing_chunk_count += 1
                 else:
                     # New context - finish any ongoing context first
                     if ongoing_context:
@@ -761,33 +806,32 @@ IMPORTANT: Return ONLY valid JSON array, no markdown. Include summary for each c
                         contexts.append(ongoing_context)
                         last_finished_context = ongoing_context
                         ongoing_context = None
+                        ongoing_chunk_count = 0
                     
                     if ctx['status'] == 'ongoing':
                         # Start new ongoing context
                         ongoing_context = ctx
+                        ongoing_chunk_count = 1
                     else:
                         # Finished context
                         contexts.append(ctx)
-                        last_finished_context = ctx  # Track for next chunk
+                        last_finished_context = ctx
             
             print(f"  Chunk {i+1}/{len(chunks)}: Found {len(chunk_contexts)} context(s)")
             
-            # Save current chunk text for next iteration
-            previous_chunk_text = chunk_text
-            
+        except json.JSONDecodeError as e:
+            print(f"  Error: Invalid JSON response for chunk {i+1}: {e}")
+            print(f"  Response was: {response_text[:200]}...")
+            continue
         except Exception as e:
             print(f"  Error processing chunk {i+1}: {e}")
-            # Still save chunk text for next iteration
-            previous_chunk_text = chunk_text
             continue
     
     # Add any remaining ongoing context
     if ongoing_context:
         contexts.append(ongoing_context)
-        last_finished_context = ongoing_context
     
-    return contexts
-
+    return contexts   
 def generate_batch_section_summaries(contexts_batch, segments, model, meeting_type):
     """Generate detailed notes for each context individually (one API call per context for maximum detail)"""
     results = []
