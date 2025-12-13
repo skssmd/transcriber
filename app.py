@@ -857,6 +857,7 @@ def generate_section_summary(context, segments, model, meeting_type):
     model = get_model()  # Get new model instance to rotate keys
     
     # Get segments for this context
+    print(segments)
     context_segments = [
         seg for seg in segments 
         if seg['start'] >= context['from_time'] and seg['end'] <= context['end_time']
