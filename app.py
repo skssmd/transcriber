@@ -133,7 +133,9 @@ def process_transcription(session_id, audio_path, filename, model_size, device, 
         
         # Generate summary with Gemini if API keys are available
         if GEMINI_API_KEYS:
-            generate_summary(session_id, full_text, segment_data)
+            # Strip word-level data to save tokens and avoid massive payloads
+            stripped_segments = strip_words_from_segments(segment_data)
+            generate_summary(session_id, full_text, stripped_segments)
         
         processing_status[session_id] = {"status": "complete", "progress": 100}
         
@@ -272,7 +274,7 @@ def regenerate_summary_task(session_id, session_data, meeting_type_override):
             "step": "Detecting meeting type..."
         }
         
-        segments = session_data.get("segments", [])
+        segments = strip_words_from_segments(session_data.get("segments", []))
         full_text = session_data.get("text", "")
         
         # Check if contexts are already cached
@@ -583,6 +585,45 @@ def chunk_by_time(segments, chunk_duration=300):
     
     return chunks
 
+def strip_words_from_segments(segments):
+    """Remove word-level timestamps to reduce token usage and JSON size in prompts"""
+    stripped = []
+    for seg in segments:
+        stripped.append({
+            'id': seg.get('id'),
+            'start': seg.get('start'),
+            'end': seg.get('end'),
+            'text': seg.get('text', '')
+        })
+    return stripped
+
+def get_segments_text(segments, target_duration=45):
+    """Group segments into larger blocks of text with timestamps to reduce token overhead"""
+    if not segments:
+        return ""
+    
+    output_text = ""
+    current_group = []
+    group_start = None
+    
+    for seg in segments:
+        if group_start is None:
+            group_start = seg['start']
+        
+        current_group.append(seg['text'])
+        
+        # If we reached the target duration or it's the last segment
+        if seg['end'] - group_start >= target_duration:
+            text_block = " ".join(current_group)
+            output_text += f"[{round(group_start, 2)}s - {round(seg['end'], 2)}s] {text_block}\n"
+            current_group = []
+            group_start = None
+            
+    if current_group:
+        output_text += f"[{round(group_start, 2)}s - {round(segments[-1]['end'], 2)}s] {' '.join(current_group)}\n"
+        
+    return output_text
+
 def map_contexts(segments, model):
     """First pass: Map contexts across the transcript using 10-minute chunks"""
     chunks = chunk_by_time(segments, chunk_duration=600)  # 10 minutes
@@ -597,9 +638,7 @@ def map_contexts(segments, model):
     for i, chunk in enumerate(chunks):
         print(f"  📝 Prompting AI: Mapping contexts for chunk {i+1}/{len(chunks)}...")
         model = get_model()  # Get new model instance for each chunk to rotate keys
-        chunk_text = ""
-        for seg in chunk['segments']:
-            chunk_text += f"[{seg['start']}s - {seg['end']}s] {seg['text']}\n"
+        chunk_text = get_segments_text(chunk['segments'], target_duration=45)
         
         # Build context history for better understanding
         context_history = ""
@@ -857,15 +896,12 @@ def generate_section_summary(context, segments, model, meeting_type):
     model = get_model()  # Get new model instance to rotate keys
     
     # Get segments for this context
-    print(segments)
     context_segments = [
         seg for seg in segments 
         if seg['start'] >= context['from_time'] and seg['end'] <= context['end_time']
     ]
     
-    context_text = ""
-    for seg in context_segments:
-        context_text += f"[{seg['start']}s - {seg['end']}s] {seg['text']}\n"
+    context_text = get_segments_text(context_segments, target_duration=60)
     
     # Same prompt for all meeting types - just generate meeting minutes notes
     prompt = f"""Analyze this section of a meeting and provide CONCISE notes with only KEY information.
