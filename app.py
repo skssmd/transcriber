@@ -263,6 +263,99 @@ def get_minutes_progress(session_id):
     })
     return jsonify(status)
 
+def find_failed_sections(summary_data):
+    """Find sections with error notes"""
+    failed = []
+    for idx, section in enumerate(summary_data.get("sections", [])):
+        notes = section.get("notes", [])
+        if notes == ["Error generating notes"] or "Error generating notes" in notes:
+            failed.append({
+                "index": idx,
+                "section_name": section.get("section_name"),
+                "start_time": section.get("start_time"),
+                "end_time": section.get("end_time")
+            })
+    return failed
+
+@app.route("/api/retry-failed-sections/<session_id>", methods=["POST"])
+def retry_failed_sections(session_id):
+    """Retry generating notes for sections that failed"""
+    try:
+        # Load summary
+        summary_path = os.path.join(SUMMARY_FOLDER, f"{session_id}_summary.json")
+        if not os.path.exists(summary_path):
+            return jsonify({"error": "Summary not found"}), 404
+        
+        with open(summary_path, "r", encoding="utf-8") as f:
+            summary_data = json.load(f)
+        
+        # Find failed sections
+        failed = find_failed_sections(summary_data)
+        if not failed:
+            return jsonify({"message": "No failed sections found", "retried": 0})
+        
+        # Load contexts
+        contexts_path = os.path.join(SESSION_FOLDER, f"{session_id}_contexts.json")
+        if not os.path.exists(contexts_path):
+            return jsonify({"error": "Contexts not found"}), 404
+        
+        with open(contexts_path, "r", encoding="utf-8") as f:
+            contexts_data = json.load(f)
+            contexts = contexts_data.get("contexts", [])
+            meeting_type = contexts_data.get("meeting_type", "REGULAR_MEETING")
+        
+        # Load session segments
+        session_path = os.path.join(SESSION_FOLDER, f"{session_id}.json")
+        if not os.path.exists(session_path):
+            return jsonify({"error": "Session not found"}), 404
+        
+        with open(session_path, "r", encoding="utf-8") as f:
+            session_data = json.load(f)
+            segments = strip_words_from_segments(session_data.get("segments", []))
+        
+        # Retry each failed section
+        retried_count = 0
+        for failed_section in failed:
+            section_idx = failed_section["index"]
+            section = summary_data["sections"][section_idx]
+            
+            # Find matching context
+            matching_context = None
+            for ctx in contexts:
+                if (abs(ctx.get("from_time", 0) - section["start_time"]) < 1.0 and 
+                    abs(ctx.get("end_time", 0) - section["end_time"]) < 1.0):
+                    matching_context = ctx
+                    break
+            
+            if not matching_context:
+                print(f"  ⚠️ No matching context found for section '{section['section_name']}'")
+                continue
+            
+            # Retry generation
+            print(f"  🔄 Retrying section '{section['section_name']}' ({section['start_time']}s - {section['end_time']}s)...")
+            model = get_model()
+            result = generate_section_summary(matching_context, segments, model, meeting_type)
+            
+            # Update section with new notes
+            summary_data["sections"][section_idx]["notes"] = result.get("notes", ["Error generating notes"])
+            retried_count += 1
+        
+        # Save updated summary
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(summary_data, f, indent=2)
+        
+        return jsonify({
+            "success": True,
+            "retried": retried_count,
+            "total_failed": len(failed)
+        })
+        
+    except Exception as e:
+        print(f"Error retrying failed sections: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 def regenerate_summary_task(session_id, session_data, meeting_type_override):
     """Background task to regenerate summary"""
     try:
@@ -636,7 +729,9 @@ def map_contexts(segments, model):
     print(f"Mapping contexts across {len(chunks)} chunks...")
     
     for i, chunk in enumerate(chunks):
-        print(f"  📝 Prompting AI: Mapping contexts for chunk {i+1}/{len(chunks)}...")
+        chunk_start = round(chunk['start_time'], 2)
+        chunk_end = round(chunk['end_time'], 2)
+        print(f"  📝 Prompting AI: Mapping contexts for chunk {i+1}/{len(chunks)} ({chunk_start}s - {chunk_end}s)...")
         model = get_model()  # Get new model instance for each chunk to rotate keys
         chunk_text = get_segments_text(chunk['segments'], target_duration=45)
         
@@ -648,7 +743,7 @@ def map_contexts(segments, model):
                 context_history += f"\n  Summary: {last_finished_context['summary']}"
         
         # Check if ongoing context needs to be broken into subcontexts (exceeded 2 chunks)
-        force_subcontext = ongoing_context and ongoing_chunk_count >= 2
+        force_subcontext = ongoing_context and ongoing_chunk_count >= 1
         
         # Build prompt with ongoing context awareness
         if ongoing_context:
@@ -688,14 +783,14 @@ Return JSON array with EXACTLY 2 contexts:
   {{
     "name": "{ongoing_context['name']}",
     "from_time": {ongoing_context['from_time']},
-    "end_time": [exact timestamp where this ends],
+    "end_time": 123.45,
     "status": "finished",
     "is_continuation": true,
     "summary": "Brief summary of what was covered in THIS portion"
   }},
   {{
     "name": "{base_context_name}: [Concise New Aspect Name]",
-    "from_time": [same as end_time above],
+    "from_time": 123.45,
     "end_time": {chunk['end_time']},
     "status": "finished" or "ongoing",
     "summary": "Brief summary of the new subcontext"
@@ -733,17 +828,18 @@ DECISION TREE:
      * Will new topic continue? → status: "ongoing" or "finished"
 
 CRITICAL RULES:
-- from_time and end_time must be EXACT timestamps from the transcript
+- from_time and end_time must be EXACT timestamps from the transcript (use the actual values from the [XXs - YYs] markers)
 - NO gaps between contexts (end_time of one = from_time of next)
 - NO overlaps allowed
 - If entire chunk is continuation, return ONE context with is_continuation: true
+- Timestamps should match the grouped text blocks shown above
 
 Return JSON array (1-2 contexts):
 [
   {{
     "name": "Context name (keep concise: 2-5 words)",
-    "from_time": [exact timestamp],
-    "end_time": [exact timestamp],
+    "from_time": 123.45,
+    "end_time": 456.78,
     "status": "finished" or "ongoing",
     "is_continuation": true or false,
     "summary": "1-2 sentences describing what was discussed"
@@ -775,16 +871,17 @@ STATUS DECISION:
 - "ongoing": Topic clearly continues beyond this chunk
 
 CRITICAL RULES:
-- Use EXACT timestamps from transcript (not rounded)
+- Use EXACT timestamps from the transcript text blocks above (from the [XXs - YYs] markers)
 - NO gaps or overlaps between contexts
 - Each context MUST have a summary (1-2 sentences)
+- Pick timestamps that align with the grouped text blocks shown
 
 Return JSON array (typically 1-2 contexts per 10-min chunk):
 [
   {{
     "name": "Concise Context Name",
-    "from_time": [exact timestamp from transcript],
-    "end_time": [exact timestamp from transcript],
+    "from_time": 123.45,
+    "end_time": 456.78,
     "status": "finished" or "ongoing",
     "summary": "Brief 1-2 sentence summary of what was discussed"
   }}
@@ -892,7 +989,9 @@ def generate_batch_section_summaries(contexts_batch, segments, model, meeting_ty
 
 def generate_section_summary(context, segments, model, meeting_type):
     """Generate detailed notes for a specific context - same structure for all meeting types"""
-    print(f"  📝 Prompting AI: Generating notes for '{context['name']}'...")
+    context_start = context['from_time']
+    context_end = context['end_time']
+    print(f"  📝 Prompting AI: Generating notes for '{context['name']}' ({context_start}s - {context_end}s)...")
     model = get_model()  # Get new model instance to rotate keys
     
     # Get segments for this context

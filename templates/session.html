@@ -1,146 +1,155 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <title>{{ data.name }} | Session View</title>
-<script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
+
 <body class="h-screen flex bg-gray-900 text-gray-200 font-sans overflow-hidden">
-<!-- Wrapper -->
-<div class="flex h-screen">
-  <!-- Sidebar (Sessions) -->
-  <aside class="w-60 bg-gradient-to-b from-gray-800 to-gray-900 p-5 overflow-y-auto border-r border-gray-700 hidden md:block">
-    <h2 class="text-sm font-semibold text-gray-400 mb-4 tracking-wide border-b border-gray-700 pb-2">Sessions</h2>
-    <li><a href="/" class="block text-cyan-400 mb-3 hover:underline">+ Transcribe New</a></li>
-    <ul id="session-list" class="space-y-2 text-sm"></ul>
-  </aside>
+  <!-- Wrapper -->
+  <div class="flex h-screen">
+    <!-- Sidebar (Sessions) -->
+    <aside
+      class="w-60 bg-gradient-to-b from-gray-800 to-gray-900 p-5 overflow-y-auto border-r border-gray-700 hidden md:block">
+      <h2 class="text-sm font-semibold text-gray-400 mb-4 tracking-wide border-b border-gray-700 pb-2">Sessions</h2>
+      <li><a href="/" class="block text-cyan-400 mb-3 hover:underline">+ Transcribe New</a></li>
+      <ul id="session-list" class="space-y-2 text-sm"></ul>
+    </aside>
 
-  <!-- Main Content Container -->
-  <div class="flex flex-1 h-full">
-    <!-- Main Content -->
-    <main class="flex-1 flex flex-col p-5 overflow-y-auto mr-0">
-      <!-- Action buttons -->
-      <div class="flex justify-between items-center mb-4">
-        <div class="space-x-2">
-          <button id="toggle-summary" class="px-3 py-1 rounded bg-gray-700 hover:bg-cyan-500 hover:text-black text-sm">
-            AI Summary
-          </button>
-          <button id="generate-minutes" class="px-3 py-1 rounded bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold">
-            Generate Minutes
-          </button>
-        </div>
-        <div class="space-x-2">
-          <button id="export-txt-timestamps" class="px-3 py-1 rounded bg-gray-700 hover:bg-cyan-500 hover:text-black text-sm">Export TXT</button>
-          <button id="export-summary-md" class="px-3 py-1 rounded bg-gray-700 hover:bg-cyan-500 hover:text-black text-sm hidden">Export Summary (MD)</button>
-        </div>
-      </div>
-
-      <!-- Generate Minutes Modal -->
-      <div id="minutes-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-        <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700">
-          <h3 class="text-xl font-bold text-cyan-400 mb-4">Generate Meeting Minutes</h3>
-          
-          <div class="mb-6">
-            <label class="block text-sm font-medium text-gray-300 mb-3">Select Meeting Type:</label>
-            <div class="space-y-3">
-              <label class="flex items-center p-3 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 transition">
-                <input type="radio" name="meeting-type" value="auto" checked class="mr-3 w-4 h-4 text-cyan-500">
-                <div>
-                  <div class="font-semibold text-white">Auto-Detect</div>
-                  <div class="text-xs text-gray-400">Let AI determine the meeting type</div>
-                </div>
-              </label>
-              
-              <label class="flex items-center p-3 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 transition">
-                <input type="radio" name="meeting-type" value="REGULAR_MEETING" class="mr-3 w-4 h-4 text-cyan-500">
-                <div>
-                  <div class="font-semibold text-white">Regular Meeting</div>
-                  <div class="text-xs text-gray-400">Business meetings, discussions, planning sessions</div>
-                </div>
-              </label>
-              
-              <label class="flex items-center p-3 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 transition">
-                <input type="radio" name="meeting-type" value="INCIDENT_REPORT" class="mr-3 w-4 h-4 text-cyan-500">
-                <div>
-                  <div class="font-semibold text-white">Incident Report</div>
-                  <div class="text-xs text-gray-400">Investigation, incident review, disciplinary meeting</div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <div id="minutes-progress" class="hidden mb-4">
-            <div class="text-sm text-gray-300 mb-2">
-              <span id="minutes-status">Preparing...</span>
-            </div>
-            <div class="w-full bg-gray-700 rounded-full h-2">
-              <div id="minutes-progress-bar" class="bg-cyan-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
-            </div>
-          </div>
-
-          <div class="flex space-x-3">
-            <button id="start-minutes-generation" class="flex-1 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-semibold transition">
-              Generate
-            </button>
-            <button id="cancel-minutes" class="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded font-semibold transition">
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <h1 class="text-2xl font-semibold mb-5">{{ data.name }}</h1>
-
-      <!-- AI Summary Panel (Hidden by default) -->
-      <div id="summary-panel" class="hidden mb-6 bg-gray-800 rounded-lg p-6 border border-gray-700">
+    <!-- Main Content Container -->
+    <div class="flex flex-1 h-full">
+      <!-- Main Content -->
+      <main class="flex-1 flex flex-col p-5 overflow-y-auto mr-0">
+        <!-- Action buttons -->
         <div class="flex justify-between items-center mb-4">
-          <h2 class="text-xl font-bold text-cyan-400">AI-Generated Summary</h2>
-          <span id="meeting-type-badge" class="hidden px-3 py-1 rounded text-xs font-semibold"></span>
-        </div>
-        <div id="summary-content" class="space-y-4">
-          <div class="text-center text-gray-400 py-8">
-            <p>Loading summary...</p>
+          <div class="space-x-2">
+            <button id="toggle-summary"
+              class="px-3 py-1 rounded bg-gray-700 hover:bg-cyan-500 hover:text-black text-sm">
+              AI Summary
+            </button>
+            <button id="generate-minutes"
+              class="px-3 py-1 rounded bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold">
+              Generate Minutes
+            </button>
+          </div>
+          <div class="space-x-2">
+            <button id="export-txt-timestamps"
+              class="px-3 py-1 rounded bg-gray-700 hover:bg-cyan-500 hover:text-black text-sm">Export TXT</button>
+            <button id="export-summary-md"
+              class="px-3 py-1 rounded bg-gray-700 hover:bg-cyan-500 hover:text-black text-sm hidden">Export Summary
+              (MD)</button>
           </div>
         </div>
-      </div>
 
-      <!-- Transcript -->
-      <div class="flex-1 overflow-y-auto mb-20" id="transcript">
-        <h3 class="text-lg mb-3">Transcript:</h3>
-        {% for seg in data.segments %}
+        <!-- Generate Minutes Modal -->
+        <div id="minutes-modal"
+          class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+          <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700">
+            <h3 class="text-xl font-bold text-cyan-400 mb-4">Generate Meeting Minutes</h3>
+
+            <div class="mb-6">
+              <label class="block text-sm font-medium text-gray-300 mb-3">Select Meeting Type:</label>
+              <div class="space-y-3">
+                <label class="flex items-center p-3 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 transition">
+                  <input type="radio" name="meeting-type" value="auto" checked class="mr-3 w-4 h-4 text-cyan-500">
+                  <div>
+                    <div class="font-semibold text-white">Auto-Detect</div>
+                    <div class="text-xs text-gray-400">Let AI determine the meeting type</div>
+                  </div>
+                </label>
+
+                <label class="flex items-center p-3 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 transition">
+                  <input type="radio" name="meeting-type" value="REGULAR_MEETING" class="mr-3 w-4 h-4 text-cyan-500">
+                  <div>
+                    <div class="font-semibold text-white">Regular Meeting</div>
+                    <div class="text-xs text-gray-400">Business meetings, discussions, planning sessions</div>
+                  </div>
+                </label>
+
+                <label class="flex items-center p-3 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 transition">
+                  <input type="radio" name="meeting-type" value="INCIDENT_REPORT" class="mr-3 w-4 h-4 text-cyan-500">
+                  <div>
+                    <div class="font-semibold text-white">Incident Report</div>
+                    <div class="text-xs text-gray-400">Investigation, incident review, disciplinary meeting</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div id="minutes-progress" class="hidden mb-4">
+              <div class="text-sm text-gray-300 mb-2">
+                <span id="minutes-status">Preparing...</span>
+              </div>
+              <div class="w-full bg-gray-700 rounded-full h-2">
+                <div id="minutes-progress-bar" class="bg-cyan-500 h-2 rounded-full transition-all duration-300"
+                  style="width: 0%"></div>
+              </div>
+            </div>
+
+            <div class="flex space-x-3">
+              <button id="start-minutes-generation"
+                class="flex-1 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-semibold transition">
+                Generate
+              </button>
+              <button id="cancel-minutes"
+                class="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded font-semibold transition">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <h1 class="text-2xl font-semibold mb-5">{{ data.name }}</h1>
+
+        <!-- AI Summary Panel (Hidden by default) -->
+        <div id="summary-panel" class="hidden mb-6 bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-cyan-400">AI-Generated Summary</h2>
+            <span id="meeting-type-badge" class="hidden px-3 py-1 rounded text-xs font-semibold"></span>
+          </div>
+          <div id="summary-content" class="space-y-4">
+            <div class="text-center text-gray-400 py-8">
+              <p>Loading summary...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Transcript -->
+        <div class="flex-1 overflow-y-auto mb-20" id="transcript">
+          <h3 class="text-lg mb-3">Transcript:</h3>
+          {% for seg in data.segments %}
           <div class="mb-4 segment">
             <span class="block text-xs text-gray-400 mb-1 segment-range">
               [{{ seg.start|round(2) }}s - {{ seg.end|round(2) }}s]
             </span>
             {% for word in seg.words %}
-              <span 
-                class="word inline-block mr-1"
-                data-start="{{ word.start }}" 
-                data-end="{{ word.end }}">
-                {{ word.word }}
-              </span>
+            <span class="word inline-block mr-1" data-start="{{ word.start }}" data-end="{{ word.end }}">
+              {{ word.word }}
+            </span>
             {% endfor %}
           </div>
-        {% endfor %}
-      </div>
-    </main>
+          {% endfor %}
+        </div>
+      </main>
+    </div>
   </div>
-</div>
 
-<!-- Audio Player at Bottom -->
-<footer class="fixed bottom-0 left-60 right-0 bg-black border-t border-gray-700 p-3 z-50">
-  <audio id="player" controls class="w-full outline-none">
-    <source src="{{ data.audio_url }}" type="audio/mpeg">
-    Your browser does not support audio playback.
-  </audio>
-</footer>
+  <!-- Audio Player at Bottom -->
+  <footer class="fixed bottom-0 left-60 right-0 bg-black border-t border-gray-700 p-3 z-50">
+    <audio id="player" controls class="w-full outline-none">
+      <source src="{{ data.audio_url }}" type="audio/mpeg">
+      Your browser does not support audio playback.
+    </audio>
+  </footer>
 
-<style>
-  .word.active {
-    background: #ffde59;
-    color: #000;
-  }
-</style>
+  <style>
+    .word.active {
+      background: #ffde59;
+      color: #000;
+    }
+  </style>
 
   <!-- JS Logic -->
   <script>
@@ -193,235 +202,260 @@
 
 
 
-      // Store segments data from server
-      const segmentsData = {{ data.segments | tojson }};
-      
-      // Export TXT with Timestamps
-      document.getElementById("export-txt-timestamps").addEventListener("click", () => {
-        let transcript = "";
-        segmentsData.forEach(seg => {
-          transcript += `[${seg.start}s - ${seg.end}s]\n${seg.text}\n\n`;
-        });
-        
-        const blob = new Blob([transcript], { type: "text/plain" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "transcript.txt";
-        a.click();
-        URL.revokeObjectURL(url);
+    // Store segments data from server
+    const segmentsData = {{ data.segments | tojson }};
+
+    // Export TXT with Timestamps
+    document.getElementById("export-txt-timestamps").addEventListener("click", () => {
+      let transcript = "";
+      segmentsData.forEach(seg => {
+        transcript += `[${seg.start}s - ${seg.end}s]\n${seg.text}\n\n`;
       });
 
-      let summaryData = null;
+      const blob = new Blob([transcript], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "transcript.txt";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
 
-// Load and display AI summary
-document.getElementById("toggle-summary").addEventListener("click", () => {
-  const panel = document.getElementById("summary-panel");
-  const isHidden = panel.classList.contains("hidden");
-  
-  if (isHidden) {
-    panel.classList.remove("hidden");
-    loadSummary();
-  } else {
-    panel.classList.add("hidden");
-  }
-});
+    let summaryData = null;
 
-function loadSummary() {
-  const sessionId = "{{ data.session_id }}";
-  const contentDiv = document.getElementById("summary-content");
-  
-  fetch(`/api/summary/${sessionId}`)
-    .then(response => response.json())
-    .then(data => {
-      if (data.error) {
-        contentDiv.innerHTML = `
+    // Load and display AI summary
+    document.getElementById("toggle-summary").addEventListener("click", () => {
+      const panel = document.getElementById("summary-panel");
+      const isHidden = panel.classList.contains("hidden");
+
+      if (isHidden) {
+        panel.classList.remove("hidden");
+        loadSummary();
+      } else {
+        panel.classList.add("hidden");
+      }
+    });
+
+    function loadSummary() {
+      const sessionId = "{{ data.session_id }}";
+      const contentDiv = document.getElementById("summary-content");
+
+      fetch(`/api/summary/${sessionId}`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.error) {
+            contentDiv.innerHTML = `
           <div class="text-center text-gray-400 py-8">
             <p>No AI summary available yet.</p>
             <p class="text-sm mt-2">Summary generation may still be in progress or Gemini API key not configured.</p>
           </div>
         `;
-        return;
-      }
-      
-      summaryData = data;
-      document.getElementById("export-summary-md").classList.remove("hidden");
-      
-      // Show meeting type badge
-      const badge = document.getElementById("meeting-type-badge");
-      if (data.meeting_type) {
-        badge.classList.remove("hidden");
-        if (data.meeting_type === "INCIDENT_REPORT") {
-          badge.textContent = "Incident Report";
-          badge.classList.add("bg-red-600", "text-white");
-        } else {
-          badge.textContent = "Regular Meeting";
-          badge.classList.add("bg-blue-600", "text-white");
-        }
-      }
-      
-      renderSummary(data);
-    })
-    .catch(err => {
-      console.error("Error loading summary:", err);
-      contentDiv.innerHTML = `
+            return;
+          }
+
+          summaryData = data;
+          document.getElementById("export-summary-md").classList.remove("hidden");
+
+          // Show meeting type badge
+          const badge = document.getElementById("meeting-type-badge");
+          if (data.meeting_type) {
+            badge.classList.remove("hidden");
+            if (data.meeting_type === "INCIDENT_REPORT") {
+              badge.textContent = "Incident Report";
+              badge.classList.add("bg-red-600", "text-white");
+            } else {
+              badge.textContent = "Regular Meeting";
+              badge.classList.add("bg-blue-600", "text-white");
+            }
+          }
+
+          renderSummary(data);
+        })
+        .catch(err => {
+          console.error("Error loading summary:", err);
+          contentDiv.innerHTML = `
         <div class="text-center text-red-400 py-8">
           <p>Error loading summary</p>
         </div>
       `;
-    });
-}
+        });
+    }
 
-// Convert markdown to HTML for display
-function markdownToHtml(text) {
-  if (!text) return text;
-  // Convert **bold** to <strong>
-  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // Convert *italic* to <em>
-  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  return text;
-}
+    // Convert markdown to HTML for display
+    function markdownToHtml(text) {
+      if (!text) return text;
+      // Convert **bold** to <strong>
+      text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      // Convert *italic* to <em>
+      text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+      return text;
+    }
 
-function renderSummary(data) {
-  const contentDiv = document.getElementById("summary-content");
-  let html = "";
-  
-  // Sections
-  if (data.sections && data.sections.length > 0) {
-    html += `<div class="mb-6">
+    function renderSummary(data) {
+      const contentDiv = document.getElementById("summary-content");
+      let html = "";
+
+      // Sections
+      if (data.sections && data.sections.length > 0) {
+        html += `<div class="mb-6">
       <h3 class="text-lg font-semibold text-cyan-300 mb-3">Sections</h3>
       <div class="space-y-4">`;
-    
-    data.sections.forEach((section, idx) => {
-      html += `
+
+        data.sections.forEach((section, idx) => {
+          // Check for error in notes
+          const hasError = section.notes && (
+            (Array.isArray(section.notes) && section.notes.length === 1 && section.notes[0] === "Error generating notes") ||
+            section.notes === "Error generating notes"
+          );
+
+          html += `
         <div class="bg-gray-700 rounded p-4">
           <div class="flex justify-between items-start mb-2">
             <h4 class="font-semibold text-white">${idx + 1}. ${section.section_name}</h4>
             <span class="text-xs text-gray-400">${section.start_time}s - ${section.end_time}s</span>
           </div>
+      `;
+
+          if (hasError) {
+            html += `
+          <div class="bg-red-900/30 border border-red-700 rounded p-3 mt-2">
+            <div class="flex items-center justify-between">
+              <span class="text-red-400 text-sm flex items-center">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                Error generating notes for this section
+              </span>
+              <button onclick="retryNotes('${data.session_id}')" class="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded transition flex items-center">
+                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                Retry Note
+              </button>
+            </div>
+          </div>
+        </div>`;
+          } else {
+            html += `
           <ul class="list-disc list-inside space-y-1 text-gray-300 text-sm">
             ${section.notes.map(note => `<li>${note}</li>`).join("")}
           </ul>
-        </div>
-      `;
-    });
-    
-    html += `</div></div>`;
-  }
-  
-  // Summary
-  if (data.summary) {
-    html += `<div class="mb-6">
+        </div>`;
+          }
+        });
+
+        html += `</div></div>`;
+      }
+
+      // Summary
+      if (data.summary) {
+        html += `<div class="mb-6">
       <h3 class="text-lg font-semibold text-cyan-300 mb-2">Summary</h3>
       <p class="text-gray-300 leading-relaxed">${data.summary}</p>
     </div>`;
-  }
-  
-  // Incident Report (detailed structure for incident reports)
-  if (data.incident_report) {
-    const report = data.incident_report;
-    html += `<div class="mb-6 bg-gray-700 rounded-lg p-6">
+      }
+
+      // Incident Report (detailed structure for incident reports)
+      if (data.incident_report) {
+        const report = data.incident_report;
+        html += `<div class="mb-6 bg-gray-700 rounded-lg p-6">
       <h3 class="text-xl font-bold text-red-400 mb-4">Incident Report</h3>`;
-    
-    // Background
-    if (report.background) {
-      html += `<div class="mb-4">
+
+        // Background
+        if (report.background) {
+          html += `<div class="mb-4">
         <h4 class="font-semibold text-cyan-300 mb-2">Background</h4>
         <p class="text-gray-300 text-sm">${markdownToHtml(report.background)}</p>
       </div>`;
-    }
-    
-    // Key Facts
-    if (report.key_facts && report.key_facts.length > 0) {
-      html += `<div class="mb-4">
+        }
+
+        // Key Facts
+        if (report.key_facts && report.key_facts.length > 0) {
+          html += `<div class="mb-4">
         <h4 class="font-semibold text-cyan-300 mb-2">Key Facts</h4>
         <ul class="list-disc list-inside space-y-1 text-gray-300 text-sm">
           ${report.key_facts.map(fact => `<li>${markdownToHtml(fact)}</li>`).join("")}
         </ul>
       </div>`;
-    }
-    
-    // Timeline
-    if (report.timeline && report.timeline.length > 0) {
-      html += `<div class="mb-4">
+        }
+
+        // Timeline
+        if (report.timeline && report.timeline.length > 0) {
+          html += `<div class="mb-4">
         <h4 class="font-semibold text-cyan-300 mb-2">Timeline</h4>`;
-      report.timeline.forEach(period => {
-        html += `<div class="mb-3 pl-4 border-l-2 border-cyan-500">
+          report.timeline.forEach(period => {
+            html += `<div class="mb-3 pl-4 border-l-2 border-cyan-500">
           <h5 class="font-medium text-white text-sm">${markdownToHtml(period.time_period)}</h5>
           <ul class="list-disc list-inside space-y-1 text-gray-300 text-sm mt-1">
             ${period.events.map(event => `<li>${markdownToHtml(event)}</li>`).join("")}
           </ul>
         </div>`;
-      });
-      html += `</div>`;
-    }
-    
-    // Concerns Identified
-    if (report.concerns_identified && report.concerns_identified.length > 0) {
-      html += `<div class="mb-4">
+          });
+          html += `</div>`;
+        }
+
+        // Concerns Identified
+        if (report.concerns_identified && report.concerns_identified.length > 0) {
+          html += `<div class="mb-4">
         <h4 class="font-semibold text-red-400 mb-2">Concerns Identified</h4>`;
-      report.concerns_identified.forEach(concern => {
-        html += `<div class="mb-3 bg-gray-800 rounded p-3">
+          report.concerns_identified.forEach(concern => {
+            html += `<div class="mb-3 bg-gray-800 rounded p-3">
           <h5 class="font-medium text-white text-sm mb-1">${concern.category}</h5>
           <ul class="list-disc list-inside space-y-1 text-gray-300 text-sm">
             ${concern.details.map(detail => `<li>${markdownToHtml(detail)}</li>`).join("")}
           </ul>
         </div>`;
-      });
-      html += `</div>`;
-    }
-    
-    // Evidence Collected
-    if (report.evidence_collected && report.evidence_collected.length > 0) {
-      html += `<div class="mb-4">
+          });
+          html += `</div>`;
+        }
+
+        // Evidence Collected
+        if (report.evidence_collected && report.evidence_collected.length > 0) {
+          html += `<div class="mb-4">
         <h4 class="font-semibold text-cyan-300 mb-2">Evidence Collected</h4>
         <ul class="list-disc list-inside space-y-1 text-gray-300 text-sm">
           ${report.evidence_collected.map(evidence => `<li>${markdownToHtml(evidence)}</li>`).join("")}
         </ul>
       </div>`;
-    }
-    
-    // Parties Involved
-    if (report.parties_involved && report.parties_involved.length > 0) {
-      html += `<div class="mb-4">
+        }
+
+        // Parties Involved
+        if (report.parties_involved && report.parties_involved.length > 0) {
+          html += `<div class="mb-4">
         <h4 class="font-semibold text-cyan-300 mb-2">Parties Involved</h4>`;
-      report.parties_involved.forEach(party => {
-        html += `<div class="mb-2 bg-gray-800 rounded p-2">
+          report.parties_involved.forEach(party => {
+            html += `<div class="mb-2 bg-gray-800 rounded p-2">
           <p class="font-medium text-white text-sm">${markdownToHtml(party.name)}</p>
           <p class="text-gray-300 text-sm">${markdownToHtml(party.involvement)}</p>
         </div>`;
-      });
-      html += `</div>`;
-    }
-    
-    html += `</div>`;
-  }
-  
-  // Conclusion
-  if (data.conclusion) {
-    html += `<div class="mb-6">
+          });
+          html += `</div>`;
+        }
+
+        html += `</div>`;
+      }
+
+      // Conclusion
+      if (data.conclusion) {
+        html += `<div class="mb-6">
       <h3 class="text-lg font-semibold text-cyan-300 mb-2">Conclusion</h3>
       <p class="text-gray-300 leading-relaxed">${data.conclusion}</p>
     </div>`;
-  }
-  
-  // Action Items
-  if (data.action_items && data.action_items.length > 0) {
-    html += `<div class="mb-6">
+      }
+
+      // Action Items
+      if (data.action_items && data.action_items.length > 0) {
+        html += `<div class="mb-6">
       <h3 class="text-lg font-semibold text-cyan-300 mb-2">Action Items</h3>`;
-    
-    data.action_items.forEach(actionGroup => {
-      if (typeof actionGroup === 'string') {
-        // Old format compatibility
-        html += `<ul class="space-y-2">
+
+        data.action_items.forEach(actionGroup => {
+          if (typeof actionGroup === 'string') {
+            // Old format compatibility
+            html += `<ul class="space-y-2">
           <li class="flex items-start">
             <span class="text-cyan-400 mr-2">✓</span>
             <span class="text-gray-300">${actionGroup}</span>
           </li>
         </ul>`;
-      } else if (actionGroup.action_for && actionGroup.action_items) {
-        // New format with action_for
-        html += `<div class="mb-4">
+          } else if (actionGroup.action_for && actionGroup.action_items) {
+            // New format with action_for
+            html += `<div class="mb-4">
           <h4 class="font-semibold text-white mb-2">${actionGroup.action_for}</h4>
           <ul class="space-y-2 ml-4">
             ${actionGroup.action_items.map(item => `
@@ -432,225 +466,263 @@ function renderSummary(data) {
             `).join("")}
           </ul>
         </div>`;
-      }
-    });
-    
-    html += `</div>`;
-  }
-  
-  contentDiv.innerHTML = html;
-}
-
-// Export summary as Markdown
-document.getElementById("export-summary-md").addEventListener("click", () => {
-  if (!summaryData) return;
-  
-  let markdown = `# Meeting Summary\n\n`;
-  markdown += `**Meeting Type:** ${summaryData.meeting_type === "INCIDENT_REPORT" ? "Incident Report" : "Regular Meeting"}\n\n`;
-  markdown += `**Generated:** ${summaryData.generated_at || new Date().toISOString()}\n\n`;
-  markdown += `---\n\n`;
-  
-  // Sections
-  if (summaryData.sections && summaryData.sections.length > 0) {
-    markdown += `## Sections\n\n`;
-    summaryData.sections.forEach((section, idx) => {
-      markdown += `### ${idx + 1}. ${section.section_name}\n`;
-      markdown += `**Time:** ${section.start_time}s - ${section.end_time}s\n\n`;
-      section.notes.forEach(note => {
-        markdown += `- ${note}\n`;
-      });
-      markdown += `\n`;
-    });
-    markdown += `---\n\n`;
-  }
-  
-  // Summary
-  if (summaryData.summary) {
-    markdown += `## Summary\n\n${summaryData.summary}\n\n---\n\n`;
-  }
-  
-  // Incident Report (detailed structure)
-  if (summaryData.incident_report) {
-    const report = summaryData.incident_report;
-    markdown += `## Incident Report\n\n`;
-    
-    if (report.background) {
-      markdown += `### Background\n\n${report.background}\n\n`;
-    }
-    
-    if (report.key_facts && report.key_facts.length > 0) {
-      markdown += `### Key Facts\n\n`;
-      report.key_facts.forEach(fact => markdown += `- ${fact}\n`);
-      markdown += `\n`;
-    }
-    
-    if (report.timeline && report.timeline.length > 0) {
-      markdown += `### Timeline\n\n`;
-      report.timeline.forEach(period => {
-        markdown += `#### ${period.time_period}\n\n`;
-        period.events.forEach(event => markdown += `- ${event}\n`);
-        markdown += `\n`;
-      });
-    }
-    
-    if (report.concerns_identified && report.concerns_identified.length > 0) {
-      markdown += `### Concerns Identified\n\n`;
-      report.concerns_identified.forEach(concern => {
-        markdown += `#### ${concern.category}\n\n`;
-        concern.details.forEach(detail => markdown += `- ${detail}\n`);
-        markdown += `\n`;
-      });
-    }
-    
-    if (report.evidence_collected && report.evidence_collected.length > 0) {
-      markdown += `### Evidence Collected\n\n`;
-      report.evidence_collected.forEach(evidence => markdown += `- ${evidence}\n`);
-      markdown += `\n`;
-    }
-    
-    if (report.parties_involved && report.parties_involved.length > 0) {
-      markdown += `### Parties Involved\n\n`;
-      report.parties_involved.forEach(party => {
-        markdown += `**${party.name}:** ${party.involvement}\n\n`;
-      });
-    }
-    
-    markdown += `---\n\n`;
-  }
-  
-  // Conclusion
-  if (summaryData.conclusion) {
-    markdown += `## Conclusion\n\n${summaryData.conclusion}\n\n---\n\n`;
-  }
-  
-  // Action Items
-  if (summaryData.action_items && summaryData.action_items.length > 0) {
-    markdown += `## Action Items\n\n`;
-    summaryData.action_items.forEach((actionGroup, idx) => {
-      if (typeof actionGroup === 'string') {
-        // Old format compatibility
-        markdown += `${idx + 1}. ${actionGroup}\n`;
-      } else if (actionGroup.action_for && actionGroup.action_items) {
-        // New format with action_for
-        markdown += `### ${actionGroup.action_for}\n\n`;
-        actionGroup.action_items.forEach(item => {
-          markdown += `- ${item}\n`;
+          }
         });
-        markdown += `\n`;
+
+        html += `</div>`;
       }
-    });
-  }
-  
-  const blob = new Blob([markdown], { type: "text/markdown" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "summary.md";
-  a.click();
-  URL.revokeObjectURL(url);
-});
 
-// Generate Minutes Modal
-const minutesModal = document.getElementById("minutes-modal");
-const generateMinutesBtn = document.getElementById("generate-minutes");
-const cancelMinutesBtn = document.getElementById("cancel-minutes");
-const startMinutesBtn = document.getElementById("start-minutes-generation");
-const minutesProgress = document.getElementById("minutes-progress");
-const minutesStatus = document.getElementById("minutes-status");
-const minutesProgressBar = document.getElementById("minutes-progress-bar");
-
-generateMinutesBtn.addEventListener("click", () => {
-  minutesModal.classList.remove("hidden");
-  minutesProgress.classList.add("hidden");
-  minutesProgressBar.style.width = "0%";
-});
-
-cancelMinutesBtn.addEventListener("click", () => {
-  minutesModal.classList.add("hidden");
-});
-
-startMinutesBtn.addEventListener("click", () => {
-  const selectedType = document.querySelector('input[name="meeting-type"]:checked').value;
-  const sessionId = "{{ data.session_id }}";
-  
-  // Disable buttons during generation
-  startMinutesBtn.disabled = true;
-  startMinutesBtn.textContent = "Generating...";
-  cancelMinutesBtn.disabled = true;
-  
-  // Show progress
-  minutesProgress.classList.remove("hidden");
-  minutesStatus.textContent = "Starting generation...";
-  minutesProgressBar.style.width = "10%";
-  
-  // Call API to regenerate summary with specified type
-  fetch(`/api/regenerate-summary/${sessionId}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      meeting_type: selectedType
-    })
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.error) {
-      alert("Error: " + data.error);
-      minutesModal.classList.add("hidden");
-      startMinutesBtn.disabled = false;
-      startMinutesBtn.textContent = "Generate";
-      cancelMinutesBtn.disabled = false;
-      return;
+      contentDiv.innerHTML = html;
     }
-    
-    // Poll for progress
-    pollMinutesProgress(sessionId);
-  })
-  .catch(err => {
-    console.error("Error starting minutes generation:", err);
-    alert("Failed to start minutes generation");
-    minutesModal.classList.add("hidden");
-    startMinutesBtn.disabled = false;
-    startMinutesBtn.textContent = "Generate";
-    cancelMinutesBtn.disabled = false;
-  });
-});
 
-function pollMinutesProgress(sessionId) {
-  fetch(`/api/minutes-progress/${sessionId}`)
-    .then(response => response.json())
-    .then(data => {
-      const { status, progress, step } = data;
-      
-      minutesProgressBar.style.width = `${progress}%`;
-      minutesStatus.textContent = step || status;
-      
-      if (status === "complete") {
-        minutesStatus.textContent = "Complete! Reloading...";
-        minutesProgressBar.style.width = "100%";
-        
-        // Reload page after short delay
-        setTimeout(() => {
-          window.location.reload();
-        }, 1500);
-      } else if (status === "error") {
-        alert("Error generating minutes: " + (data.error || "Unknown error"));
-        minutesModal.classList.add("hidden");
-        startMinutesBtn.disabled = false;
-        startMinutesBtn.textContent = "Generate";
-        cancelMinutesBtn.disabled = false;
-      } else {
-        // Continue polling every 5 seconds
-        setTimeout(() => pollMinutesProgress(sessionId), 5000);
+    // Export summary as Markdown
+    document.getElementById("export-summary-md").addEventListener("click", () => {
+      if (!summaryData) return;
+
+      let markdown = `# Meeting Summary\n\n`;
+      markdown += `**Meeting Type:** ${summaryData.meeting_type === "INCIDENT_REPORT" ? "Incident Report" : "Regular Meeting"}\n\n`;
+      markdown += `**Generated:** ${summaryData.generated_at || new Date().toISOString()}\n\n`;
+      markdown += `---\n\n`;
+
+      // Sections
+      if (summaryData.sections && summaryData.sections.length > 0) {
+        markdown += `## Sections\n\n`;
+        summaryData.sections.forEach((section, idx) => {
+          markdown += `### ${idx + 1}. ${section.section_name}\n`;
+          markdown += `**Time:** ${section.start_time}s - ${section.end_time}s\n\n`;
+          section.notes.forEach(note => {
+            markdown += `- ${note}\n`;
+          });
+          markdown += `\n`;
+        });
+        markdown += `---\n\n`;
       }
-    })
-    .catch(err => {
-      console.error("Error polling progress:", err);
-      setTimeout(() => pollMinutesProgress(sessionId), 5000);
+
+      // Summary
+      if (summaryData.summary) {
+        markdown += `## Summary\n\n${summaryData.summary}\n\n---\n\n`;
+      }
+
+      // Incident Report (detailed structure)
+      if (summaryData.incident_report) {
+        const report = summaryData.incident_report;
+        markdown += `## Incident Report\n\n`;
+
+        if (report.background) {
+          markdown += `### Background\n\n${report.background}\n\n`;
+        }
+
+        if (report.key_facts && report.key_facts.length > 0) {
+          markdown += `### Key Facts\n\n`;
+          report.key_facts.forEach(fact => markdown += `- ${fact}\n`);
+          markdown += `\n`;
+        }
+
+        if (report.timeline && report.timeline.length > 0) {
+          markdown += `### Timeline\n\n`;
+          report.timeline.forEach(period => {
+            markdown += `#### ${period.time_period}\n\n`;
+            period.events.forEach(event => markdown += `- ${event}\n`);
+            markdown += `\n`;
+          });
+        }
+
+        if (report.concerns_identified && report.concerns_identified.length > 0) {
+          markdown += `### Concerns Identified\n\n`;
+          report.concerns_identified.forEach(concern => {
+            markdown += `#### ${concern.category}\n\n`;
+            concern.details.forEach(detail => markdown += `- ${detail}\n`);
+            markdown += `\n`;
+          });
+        }
+
+        if (report.evidence_collected && report.evidence_collected.length > 0) {
+          markdown += `### Evidence Collected\n\n`;
+          report.evidence_collected.forEach(evidence => markdown += `- ${evidence}\n`);
+          markdown += `\n`;
+        }
+
+        if (report.parties_involved && report.parties_involved.length > 0) {
+          markdown += `### Parties Involved\n\n`;
+          report.parties_involved.forEach(party => {
+            markdown += `**${party.name}:** ${party.involvement}\n\n`;
+          });
+        }
+
+        markdown += `---\n\n`;
+      }
+
+      // Conclusion
+      if (summaryData.conclusion) {
+        markdown += `## Conclusion\n\n${summaryData.conclusion}\n\n---\n\n`;
+      }
+
+      // Action Items
+      if (summaryData.action_items && summaryData.action_items.length > 0) {
+        markdown += `## Action Items\n\n`;
+        summaryData.action_items.forEach((actionGroup, idx) => {
+          if (typeof actionGroup === 'string') {
+            // Old format compatibility
+            markdown += `${idx + 1}. ${actionGroup}\n`;
+          } else if (actionGroup.action_for && actionGroup.action_items) {
+            // New format with action_for
+            markdown += `### ${actionGroup.action_for}\n\n`;
+            actionGroup.action_items.forEach(item => {
+              markdown += `- ${item}\n`;
+            });
+            markdown += `\n`;
+          }
+        });
+      }
+
+      const blob = new Blob([markdown], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "summary.md";
+      a.click();
+      URL.revokeObjectURL(url);
     });
-}
+
+    // Generate Minutes Modal
+    const minutesModal = document.getElementById("minutes-modal");
+    const generateMinutesBtn = document.getElementById("generate-minutes");
+    const cancelMinutesBtn = document.getElementById("cancel-minutes");
+    const startMinutesBtn = document.getElementById("start-minutes-generation");
+    const minutesProgress = document.getElementById("minutes-progress");
+    const minutesStatus = document.getElementById("minutes-status");
+    const minutesProgressBar = document.getElementById("minutes-progress-bar");
+
+    generateMinutesBtn.addEventListener("click", () => {
+      minutesModal.classList.remove("hidden");
+      minutesProgress.classList.add("hidden");
+      minutesProgressBar.style.width = "0%";
+    });
+
+    cancelMinutesBtn.addEventListener("click", () => {
+      minutesModal.classList.add("hidden");
+    });
+
+    startMinutesBtn.addEventListener("click", () => {
+      const selectedType = document.querySelector('input[name="meeting-type"]:checked').value;
+      const sessionId = "{{ data.session_id }}";
+
+      // Disable buttons during generation
+      startMinutesBtn.disabled = true;
+      startMinutesBtn.textContent = "Generating...";
+      cancelMinutesBtn.disabled = true;
+
+      // Show progress
+      minutesProgress.classList.remove("hidden");
+      minutesStatus.textContent = "Starting generation...";
+      minutesProgressBar.style.width = "10%";
+
+      // Call API to regenerate summary with specified type
+      fetch(`/api/regenerate-summary/${sessionId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          meeting_type: selectedType
+        })
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.error) {
+            alert("Error: " + data.error);
+            minutesModal.classList.add("hidden");
+            startMinutesBtn.disabled = false;
+            startMinutesBtn.textContent = "Generate";
+            cancelMinutesBtn.disabled = false;
+            return;
+          }
+
+          // Poll for progress
+          pollMinutesProgress(sessionId);
+        })
+        .catch(err => {
+          console.error("Error starting minutes generation:", err);
+          alert("Failed to start minutes generation");
+          minutesModal.classList.add("hidden");
+          startMinutesBtn.disabled = false;
+          startMinutesBtn.textContent = "Generate";
+          cancelMinutesBtn.disabled = false;
+        });
+    });
+
+    function pollMinutesProgress(sessionId) {
+      fetch(`/api/minutes-progress/${sessionId}`)
+        .then(response => response.json())
+        .then(data => {
+          const { status, progress, step } = data;
+
+          minutesProgressBar.style.width = `${progress}%`;
+          minutesStatus.textContent = step || status;
+
+          if (status === "complete") {
+            minutesStatus.textContent = "Complete! Reloading...";
+            minutesProgressBar.style.width = "100%";
+
+            // Reload page after short delay
+            setTimeout(() => {
+              window.location.reload();
+            }, 1500);
+          } else if (status === "error") {
+            alert("Error generating minutes: " + (data.error || "Unknown error"));
+            minutesModal.classList.add("hidden");
+            startMinutesBtn.disabled = false;
+            startMinutesBtn.textContent = "Generate";
+            cancelMinutesBtn.disabled = false;
+          } else {
+            // Continue polling every 5 seconds
+            setTimeout(() => pollMinutesProgress(sessionId), 5000);
+          }
+        })
+        .catch(err => {
+          console.error("Error polling progress:", err);
+          setTimeout(() => pollMinutesProgress(sessionId), 5000);
+        });
+    }
+
+    function retryNotes(sessionId) {
+      // Find all retry buttons and set to loading state
+      const buttons = document.querySelectorAll('button[onclick^="retryNotes"]');
+      buttons.forEach(btn => {
+        btn.disabled = true;
+        btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Retrying...`;
+      });
+
+      fetch(`/api/retry-failed-sections/${sessionId}`, {
+        method: "POST"
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.error) {
+            alert("Error retrying notes: " + data.error);
+            // Reset buttons
+            buttons.forEach(btn => {
+              btn.disabled = false;
+              btn.innerHTML = `<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Retry Note`;
+            });
+            return;
+          }
+
+          // Success, reload summary
+          loadSummary();
+        })
+        .catch(err => {
+          console.error("Error retrying notes:", err);
+          alert("Failed to retry notes");
+          // Reset buttons
+          buttons.forEach(btn => {
+            btn.disabled = false;
+            btn.innerHTML = `<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Retry Note`;
+          });
+        });
+    }
 
   </script>
 </body>
+
 </html>
