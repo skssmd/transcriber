@@ -64,8 +64,14 @@ if GEMINI_API_KEYS:
 processing_status = {}
 def convert_to_wav(input_path, output_path):
     """Convert any audio format to 16kHz mono WAV using ffmpeg."""
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path is None:
+        raise FileNotFoundError(
+            "ffmpeg not found. Please install ffmpeg and make sure it is in your system PATH. "
+            "Download from: https://ffmpeg.org/download.html"
+        )
     command = [
-        "ffmpeg", "-i", input_path, "-ar", "16000", "-ac", "1",
+        ffmpeg_path, "-i", input_path, "-ar", "16000", "-ac", "1",
         "-y", output_path
     ]
     subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
@@ -158,7 +164,7 @@ def index():
             # Generate session ID and save file
             session_id = str(uuid.uuid4())
             filename = audio.filename
-            original_path = os.path.join(UPLOAD_FOLDER, filename)
+            original_path = os.path.abspath(os.path.join(UPLOAD_FOLDER, filename))
             audio.save(original_path)
             
             # Initialize status
@@ -386,73 +392,15 @@ def regenerate_summary_task(session_id, session_data, meeting_type_override):
             meeting_type = meeting_type_override
         
         processing_status[progress_key] = {
-            "status": "mapping_contexts",
+            "status": "processing_stream",
             "progress": 20,
-            "step": f"Mapping contexts ({meeting_type})..."
+            "step": f"Processing transcript stream ({meeting_type})..."
         }
         
-        # Generate summary with smart chunking
+        # Generate summary with smart chunking (stream processing)
         model = get_model()
         
-        # Check if we can reuse cached contexts (only if meeting type matches)
-        if os.path.exists(contexts_cache_file):
-            with open(contexts_cache_file, 'r', encoding='utf-8') as f:
-                cached_data = json.load(f)
-                cached_meeting_type = cached_data.get('meeting_type')
-                
-                # Reuse cache only if meeting type matches or was auto-detected
-                if meeting_type_override == "auto" or cached_meeting_type == meeting_type:
-                    contexts = cached_data.get('contexts', [])
-                    print(f"  ✅ Reusing cached context mapping ({len(contexts)} contexts)")
-                else:
-                    # Meeting type changed, regenerate contexts
-                    print(f"  🔄 Meeting type changed ({cached_meeting_type} → {meeting_type}), regenerating contexts...")
-                    contexts = map_contexts(segments, model)
-                    # Update cache with new meeting type
-                    with open(contexts_cache_file, 'w', encoding='utf-8') as f:
-                        json.dump({
-                            'meeting_type': meeting_type,
-                            'contexts': contexts,
-                            'generated_at': datetime.now().isoformat()
-                        }, f, indent=2)
-        else:
-            # No cache, map contexts
-            contexts = map_contexts(segments, model)
-            # Save to cache
-            print("  💾 Saving context mapping to cache...")
-            with open(contexts_cache_file, 'w', encoding='utf-8') as f:
-                json.dump({
-                    'meeting_type': meeting_type,
-                    'contexts': contexts,
-                    'generated_at': datetime.now().isoformat()
-                }, f, indent=2)
-        
-        processing_status[progress_key] = {
-            "status": "generating_notes",
-            "progress": 40,
-            "step": f"Generating detailed notes for {len(contexts)} contexts individually..."
-        }
-        
-        # Generate sections individually for maximum detail
-        sections = []
-        
-        for idx, context in enumerate(contexts):
-            result = generate_section_summary(context, segments, model, meeting_type)
-            
-            sections.append({
-                "section_name": result['name'],
-                "start_time": round(result['from_time'], 2),
-                "end_time": round(result['end_time'], 2),
-                "notes": result['notes']
-            })
-            
-            # Update progress for each context
-            progress = 40 + int(((idx + 1) / len(contexts)) * 40)
-            processing_status[progress_key] = {
-                "status": "generating_notes",
-                "progress": progress,
-                "step": f"Processing context {idx + 1}/{len(contexts)}: {context['name']}"
-            }
+        sections = process_chunk_stream(segments, model, meeting_type)
         
         processing_status[progress_key] = {
             "status": "finalizing",
@@ -717,405 +665,161 @@ def get_segments_text(segments, target_duration=45):
         
     return output_text
 
-def map_contexts(segments, model):
-    """First pass: Map contexts across the transcript using 10-minute chunks"""
-    chunks = chunk_by_time(segments, chunk_duration=600)  # 10 minutes
-    contexts = []
-    ongoing_context = None
-    ongoing_chunk_count = 0  # Track how many chunks the current context has spanned
-    last_finished_context = None
-    previous_chunk_text = None
+def process_chunk_stream(segments, model, meeting_type="REGULAR_MEETING"):
+    """
+    Single-pass processing: Process segments in chunks, identifying contexts
+    and generating/updating notes in real-time.
+    """
+    # 1. Chunk by time (15-20 min chunks for better context)
+    chunk_duration = 1000  # ~16 minutes
+    chunks = chunk_by_time(segments, chunk_duration=chunk_duration)
     
-    print(f"Mapping contexts across {len(chunks)} chunks...")
+    print(f"Processing transcript in {len(chunks)} stream chunks...")
+    
+    final_sections = []
+    ongoing_context = None
     
     for i, chunk in enumerate(chunks):
         chunk_start = round(chunk['start_time'], 2)
         chunk_end = round(chunk['end_time'], 2)
-        print(f"  📝 Prompting AI: Mapping contexts for chunk {i+1}/{len(chunks)} ({chunk_start}s - {chunk_end}s)...")
-        model = get_model()  # Get new model instance for each chunk to rotate keys
-        chunk_text = get_segments_text(chunk['segments'], target_duration=45)
+        print(f"  🌊 Stream Processing Chunk {i+1}/{len(chunks)} ({chunk_start}s - {chunk_end}s)...")
         
-        # Build context history for better understanding
-        context_history = ""
-        if last_finished_context:
-            context_history += f"\nLast finished context: \"{last_finished_context['name']}\" ({last_finished_context['from_time']}s - {last_finished_context['end_time']}s)"
-            if 'summary' in last_finished_context:
-                context_history += f"\n  Summary: {last_finished_context['summary']}"
+        model = get_model() # Rotate keys
         
-        # Check if ongoing context needs to be broken into subcontexts (exceeded 2 chunks)
-        force_subcontext = ongoing_context and ongoing_chunk_count >= 1
+        # Get text for this chunk
+        chunk_text = get_segments_text(chunk['segments'], target_duration=60)
         
-        # Build prompt with ongoing context awareness
+        # Prepare ongoing context info
+        ongoing_context_prompt = ""
         if ongoing_context:
-            # Determine if this is a subcontext (check for ":" in name)
-            is_subcontext = ":" in ongoing_context['name']
-            base_context_name = ongoing_context['name'].split(":")[0].strip() if is_subcontext else ongoing_context['name']
-            
-            if force_subcontext:
-                # Force breaking into subcontexts as this context has exceeded 2 chunks
-                prompt = f"""Previous context information:
-Ongoing context: "{ongoing_context['name']}" (started at {ongoing_context['from_time']}s, has spanned {ongoing_chunk_count} chunks)
-  Summary so far: {ongoing_context.get('summary', 'N/A')}
+            ongoing_context_prompt = f"""
+ONGOING CONTEXT FROM PREVIOUS CHUNK:
+Name: "{ongoing_context['name']}"
+Started at: {ongoing_context['from_time']}s
+Summary/Notes so far:
+{json.dumps(ongoing_context['notes'][-3:], indent=2)} (last 3 points)
 
-⚠️ CRITICAL: This context has exceeded the maximum of 2 chunks. You MUST break it into subcontexts NOW.
+INSTRUCTION FOR ONGOING CONTEXT:
+1. This context continues into the current chunk.
+2. **GENERATE NEW NOTES ONLY**: meaningful updates from THIS CHUNK.
+3. **DO NOT REPEAT** information from the previous chunk.
+4. If the topic finishes in this chunk, mark as "finished".
+5. If it continues to the NEXT chunk, mark as "ongoing".
+"""
 
-Current chunk ({chunk['start_time']}s - {chunk['end_time']}s):
+        prompt = f"""Analyze this meeting transcript chunk. Identify topics (contexts) and generate detailed notes.
+
+TRANSCRIPT CHUNK ({chunk_start}s - {chunk_end}s):
 {chunk_text}
+{ongoing_context_prompt}
 
-SUBCONTEXT NAMING RULES (MANDATORY):
-- Base topic name: "{base_context_name}"
-- Format: "Base Topic: Specific Aspect"
-- Keep base name SHORT (2-4 words max)
-- Subcontext should be descriptive but concise (2-4 words)
-- Examples: 
-  * "Product Launch: Marketing Strategy"
-  * "Product Launch: Budget Discussion"
-  * "Incident Report: Initial Account"
-  * "Incident Report: Follow-up Actions"
+INSTRUCTIONS:
+1. **Identify Contexts**: logical sections/topics in the meeting.
+2. **Generate Notes**: detailed, concise notes for each context.
+3. **Handle Transitions**: When a topic changes, end the current context and start a new one.
 
-REQUIRED ACTIONS:
-1. End the ongoing context "{ongoing_context['name']}" at the point where the subtopic shifts in this chunk
-2. Create a NEW subcontext: "{base_context_name}: [New Specific Aspect]"
-3. The end_time of the first context MUST equal the from_time of the second context (no gaps/overlaps)
+OUTPUT RULES:
+- **name**: Concise topic name (2-5 words)
+- **from_time**: Start time (seconds)
+- **end_time**: End time (seconds) - MUST MATCH CHUNK END TIME if "ongoing"
+- **status**: "finished" (topic ends here) or "ongoing" (topic continues to next chunk)
+- **notes**: List of strings. For ongoing contexts, provide ONLY NEW NOTES from this chunk.
 
-Return JSON array with EXACTLY 2 contexts:
+format:
 [
   {{
-    "name": "{ongoing_context['name']}",
-    "from_time": {ongoing_context['from_time']},
-    "end_time": 123.45,
+    "name": "Topic Name",
+    "from_time": 123.0,
+    "end_time": 456.0,
     "status": "finished",
-    "is_continuation": true,
-    "summary": "Brief summary of what was covered in THIS portion"
-  }},
-  {{
-    "name": "{base_context_name}: [Concise New Aspect Name]",
-    "from_time": 123.45,
-    "end_time": {chunk['end_time']},
-    "status": "finished" or "ongoing",
-    "summary": "Brief summary of the new subcontext"
+    "notes": ["Point 1", "Point 2"]
   }}
 ]
 
-CRITICAL: Return ONLY valid JSON array, no markdown, no explanation."""
-            else:
-                # Normal ongoing context handling (not forced subcontext yet)
-                prompt = f"""Previous context information:
-Ongoing context: "{ongoing_context['name']}" (started at {ongoing_context['from_time']}s)
-  Chunks spanned: {ongoing_chunk_count + 1} of MAXIMUM 2
-  Summary so far: {ongoing_context.get('summary', 'N/A')}
-{context_history}
-
-Current chunk ({chunk['start_time']}s - {chunk['end_time']}s):
-{chunk_text}
-
-CONTEXT RULES:
-- Maximum 2 chunks per context - if exceeding, break into subcontexts
-- Subcontext format: "Base Topic: Specific Aspect" (both parts should be 2-4 words)
-- Only mark "ongoing" if discussion truly continues beyond this chunk
-- Mark "finished" if topic concludes or shifts significantly
-
-DECISION TREE:
-1. Is this a CONTINUATION of "{ongoing_context['name']}"?
-   - YES, same topic → Set is_continuation: true
-     * Will it continue beyond this chunk? → status: "ongoing"
-     * Does it conclude in this chunk? → status: "finished"
-   
-2. Is this a NEW topic/discussion?
-   - YES, different topic → Set is_continuation: false
-     * Finish ongoing context at transition point
-     * Create new context starting at transition point
-     * Will new topic continue? → status: "ongoing" or "finished"
-
-CRITICAL RULES:
-- from_time and end_time must be EXACT timestamps from the transcript (use the actual values from the [XXs - YYs] markers)
-- NO gaps between contexts (end_time of one = from_time of next)
-- NO overlaps allowed
-- If entire chunk is continuation, return ONE context with is_continuation: true
-- Timestamps should match the grouped text blocks shown above
-
-Return JSON array (1-2 contexts):
-[
-  {{
-    "name": "Context name (keep concise: 2-5 words)",
-    "from_time": 123.45,
-    "end_time": 456.78,
-    "status": "finished" or "ongoing",
-    "is_continuation": true or false,
-    "summary": "1-2 sentences describing what was discussed"
-  }}
-]
-
-CRITICAL: Return ONLY valid JSON array, no markdown, no explanation."""
-        else:
-            prompt = f"""Analyze this transcript chunk and identify contexts (distinct topics/discussions).
-{context_history}
-
-Current chunk ({chunk['start_time']}s - {chunk['end_time']}s):
-{chunk_text}
-
-CONTEXT IDENTIFICATION RULES:
-- Context = A distinct topic or discussion thread
-- Use CONCISE names (2-5 words): "Budget Review", "Incident Report", "Product Demo"
-- Maximum 2 chunks per context - plan names that can be subdivided if needed
-- Be conservative: Fewer, well-defined contexts > many small fragments
-- If entire chunk is ONE topic → Return ONE context
-
-NAMING GUIDELINES:
-- Good: "Technical Implementation", "Client Feedback", "Safety Protocol"
-- Bad: "Discussion about the technical implementation details and challenges"
-- Avoid: overly specific names that can't accommodate subcontexts later
-
-STATUS DECISION:
-- "finished": Topic concludes within this chunk
-- "ongoing": Topic clearly continues beyond this chunk
-
-CRITICAL RULES:
-- Use EXACT timestamps from the transcript text blocks above (from the [XXs - YYs] markers)
-- NO gaps or overlaps between contexts
-- Each context MUST have a summary (1-2 sentences)
-- Pick timestamps that align with the grouped text blocks shown
-
-Return JSON array (typically 1-2 contexts per 10-min chunk):
-[
-  {{
-    "name": "Concise Context Name",
-    "from_time": 123.45,
-    "end_time": 456.78,
-    "status": "finished" or "ongoing",
-    "summary": "Brief 1-2 sentence summary of what was discussed"
-  }}
-]
-
-CRITICAL: Return ONLY valid JSON array, no markdown, no explanation."""
-        
+CRITICAL:
+- Return ONLY valid JSON.
+- NO overlapping times (except boundaries).
+- Gaps are allowed if no meaningful content exists, but prefer continuous coverage.
+"""
         try:
             response = model.generate_content(prompt)
             response_text = response.text.strip()
-            
-            # Clean markdown
             if response_text.startswith("```"):
                 response_text = response_text.split("```")[1]
                 if response_text.startswith("json"):
                     response_text = response_text[4:]
-                response_text = response_text.strip()
             
-            chunk_contexts = json.loads(response_text)
+            chunk_results = json.loads(response_text)
             
-            # Validate and process contexts
-            for ctx_idx, ctx in enumerate(chunk_contexts):
-                # Validate required fields
-                if not all(key in ctx for key in ['name', 'from_time', 'end_time', 'status']):
-                    print(f"  Warning: Context missing required fields, skipping")
+            # Process results
+            for res in chunk_results:
+                # Validate
+                if 'name' not in res or 'notes' not in res:
                     continue
                 
-                # Check if this context ended in previous chunk
-                if ctx.get('ended_in_previous') and ongoing_context:
-                    ongoing_context['end_time'] = ctx['end_time']
-                    if 'summary' in ctx:
-                        ongoing_context['summary'] = ctx['summary']
-                    contexts.append(ongoing_context)
-                    last_finished_context = ongoing_context
-                    ongoing_context = None
-                    ongoing_chunk_count = 0
-                    continue
-                
-                if ctx.get('is_continuation') and ongoing_context:
-                    # Continuation of ongoing context
-                    ongoing_context['end_time'] = ctx['end_time']
-                    if 'summary' in ctx:
-                        ongoing_context['summary'] = ctx['summary']
-                    
-                    if ctx['status'] == 'finished':
-                        contexts.append(ongoing_context)
-                        last_finished_context = ongoing_context
-                        ongoing_context = None
-                        ongoing_chunk_count = 0
+                # Logic for ongoing vs finished
+                if res.get('status') == 'ongoing':
+                    if ongoing_context and res['name'] == ongoing_context['name']:
+                        # Append NEW notes to existing ongoing context
+                        ongoing_context['notes'].extend(res['notes'])
+                        ongoing_context['end_time'] = res['end_time']
                     else:
-                        # Still ongoing, increment counter
-                        ongoing_chunk_count += 1
+                        # New ongoing context detected
+                        ongoing_context = res
                 else:
-                    # New context - finish any ongoing context first
-                    if ongoing_context:
-                        # Finish ongoing context at the start of this new context
-                        ongoing_context['end_time'] = ctx['from_time']
-                        contexts.append(ongoing_context)
-                        last_finished_context = ongoing_context
+                    # Finished context
+                    if ongoing_context and res['name'] == ongoing_context['name']:
+                        # It was ongoing, now finished. Combine and close.
+                        ongoing_context['notes'].extend(res['notes'])
+                        ongoing_context['end_time'] = res['end_time']
+                        final_sections.append({
+                            "section_name": ongoing_context['name'],
+                            "start_time": round(float(ongoing_context.get('from_time', chunk_start)), 2),
+                            "end_time": round(float(ongoing_context.get('end_time', chunk_end)), 2),
+                            "notes": ongoing_context['notes']
+                        })
                         ongoing_context = None
-                        ongoing_chunk_count = 0
-                    
-                    if ctx['status'] == 'ongoing':
-                        # Start new ongoing context
-                        ongoing_context = ctx
-                        ongoing_chunk_count = 1
                     else:
-                        # Finished context
-                        contexts.append(ctx)
-                        last_finished_context = ctx
+                        # Just a regular finished context in this chunk
+                        final_sections.append({
+                            "section_name": res['name'],
+                            "start_time": round(float(res.get('from_time', chunk_start)), 2),
+                            "end_time": round(float(res.get('end_time', chunk_end)), 2),
+                            "notes": res['notes']
+                        })
+                        ongoing_context = None
             
-            print(f"  Chunk {i+1}/{len(chunks)}: Found {len(chunk_contexts)} context(s)")
-            
-        except json.JSONDecodeError as e:
-            print(f"  Error: Invalid JSON response for chunk {i+1}: {e}")
-            print(f"  Response was: {response_text[:200]}...")
-            continue
         except Exception as e:
-            print(f"  Error processing chunk {i+1}: {e}")
+            print(f"Error processing chunk {i}: {e}")
             continue
-    
-    # Add any remaining ongoing context
+
+    # After all chunks, if there's still an ongoing context, close it
     if ongoing_context:
-        contexts.append(ongoing_context)
-    
-    return contexts   
-def generate_batch_section_summaries(contexts_batch, segments, model, meeting_type):
-    """Generate detailed notes for each context individually (one API call per context for maximum detail)"""
-    results = []
-    
-    for context in contexts_batch:
-        try:
-            result = generate_section_summary(context, segments, model, meeting_type)
-            results.append(result)
-        except Exception as e:
-            print(f"Error generating summary for {context['name']}: {e}")
-            results.append({
-                'name': context['name'],
-                'from_time': context['from_time'],
-                'end_time': context['end_time'],
-                'notes': ["Error generating notes for this section"]
-            })
-    
-    return results
+        final_sections.append({
+            "section_name": ongoing_context['name'],
+            "start_time": round(float(ongoing_context.get('from_time', 0)), 2),
+            "end_time": round(float(ongoing_context.get('end_time', chunks[-1]['end_time'])), 2),
+            "notes": ongoing_context['notes']
+        })
 
-def generate_section_summary(context, segments, model, meeting_type):
-    """Generate detailed notes for a specific context - same structure for all meeting types"""
-    context_start = context['from_time']
-    context_end = context['end_time']
-    print(f"  📝 Prompting AI: Generating notes for '{context['name']}' ({context_start}s - {context_end}s)...")
-    model = get_model()  # Get new model instance to rotate keys
-    
-    # Get segments for this context
-    context_segments = [
-        seg for seg in segments 
-        if seg['start'] >= context['from_time'] and seg['end'] <= context['end_time']
-    ]
-    
-    context_text = get_segments_text(context_segments, target_duration=60)
-    
-    # Same prompt for all meeting types - just generate meeting minutes notes
-    prompt = f"""Analyze this section of a meeting and provide CONCISE notes with only KEY information.
+    return final_sections
 
-Section: {context['name']}
-Time: {context['from_time']}s - {context['end_time']}s
-
-Transcript:
-{context_text}
-
-Provide BRIEF, CONCISE notes focusing on:
-- Key discussion points (summarize, don't repeat everything)
-- Important decisions made
-- Critical concerns mentioned
-- Action items discussed
-
-IMPORTANT GUIDELINES:
-- Keep notes SHORT and to the point
-- Only include KEY information, not every detail
-- Summarize rather than transcribe
-- Provide 3-5 notes per section (maximum 8 if needed)
-- Each note should be 1-2 sentences
-- Focus on what's important, not everything said
-
-Return JSON:
-{{
-  "notes": [
-    "Brief key point 1",
-    "Brief key point 2",
-    "Brief key point 3"
-  ]
-}}
-
-IMPORTANT: Return ONLY valid JSON, no markdown."""
-    
-    try:
-        response = model.generate_content(prompt)
-        response_text = response.text.strip()
-        
-        # Clean markdown
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-        
-        result = json.loads(response_text)
-        
-        # Add context metadata to result
-        return {
-            'name': context['name'],
-            'from_time': context['from_time'],
-            'end_time': context['end_time'],
-            'notes': result.get('notes', [])
-        }
-    except Exception as e:
-        print(f"  Error generating notes for {context['name']}: {e}")
-        return {
-            'name': context['name'],
-            'from_time': context['from_time'],
-            'end_time': context['end_time'],
-            'notes': ["Error generating notes"]
-        }
 
 def generate_summary(session_id, full_text, segments):
-    """Generate structured summary using smart chunking and context mapping"""
+    """Generate structured summary using streamed chunk processing"""
     try:
         model = get_model()
         
-        print(f"Starting smart summarization for session {session_id}...")
+        print(f"Starting optimized stream summarization for session {session_id}...")
         
-        # Check if contexts are already cached
-        contexts_cache_file = os.path.join(SESSION_FOLDER, f"{session_id}_contexts.json")
-        
-        if os.path.exists(contexts_cache_file):
-            print("  ✅ Loading cached context mapping...")
-            with open(contexts_cache_file, 'r', encoding='utf-8') as f:
-                cached_data = json.load(f)
-                meeting_type = cached_data.get('meeting_type', 'REGULAR_MEETING')
-                contexts = cached_data.get('contexts', [])
-            print(f"  Loaded {len(contexts)} contexts from cache (meeting type: {meeting_type})")
-        else:
-            # Step 1: Detect meeting type
-            meeting_type = detect_meeting_type(segments)
-            print(f"  Detected meeting type: {meeting_type}")
-            
-            # Step 2: Map contexts across transcript
-            contexts = map_contexts(segments, model)
-            print(f"  Mapped {len(contexts)} contexts")
-            
-            # Save contexts to cache
-            print("  💾 Saving context mapping to cache...")
-            with open(contexts_cache_file, 'w', encoding='utf-8') as f:
-                json.dump({
-                    'meeting_type': meeting_type,
-                    'contexts': contexts,
-                    'generated_at': datetime.now().isoformat()
-                }, f, indent=2)
-            print("  ✅ Context mapping cached")
-        
-        # Step 3: Generate detailed notes for each context individually
-        sections = []
-        
-        for idx, context in enumerate(contexts):
-            print(f"  Generating notes for context {idx + 1}/{len(contexts)}: {context['name']}")
-            
-            result = generate_section_summary(context, segments, model, meeting_type)
-            
-            sections.append({
-                "section_name": result['name'],
-                "start_time": round(result['from_time'], 2),
-                "end_time": round(result['end_time'], 2),
-                "notes": result['notes']
-            })
-        
+        # Step 1: Detect meeting type
+        meeting_type = detect_meeting_type(segments)
+        print(f"  Detected meeting type: {meeting_type}")
+
+        # Step 2: Stream Process (Contexts + Notes in one pass)
+        sections = process_chunk_stream(segments, model, meeting_type)
+        print(f"  Generated {len(sections)} sections via stream processing.")
+                
         # Step 4: Generate overall summary, conclusion, and action items
         print("  Generating overall summary...")
         print("  📝 Prompting AI: Generating final summary and conclusion...")

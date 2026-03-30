@@ -80,3 +80,6 @@ Thumbs.db
 # Keep example files if any
 !example/
 a/
+/__pycache__
+/__pycache__
+*.pyc
